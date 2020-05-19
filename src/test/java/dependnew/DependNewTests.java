@@ -2,23 +2,27 @@ package dependnew;
 
 import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.wrapper.WorkerWrapper;
+import org.junit.Test;
 
 import java.util.concurrent.ExecutionException;
 
 
 /**
  * 后面请求依赖于前面请求的执行结果
- * @author wuweifeng wrote on 2019-12-26
+ *
+ * @author wuweifeng wrote on 2019-12-26.
+ * @author tony.
  * @version 1.0
  */
-public class Test {
+public class DependNewTests {
 
-    public static void main(String[] args) throws ExecutionException, InterruptedException {
+    @Test
+    public void workerDependNew() throws ExecutionException, InterruptedException {
         DeWorker w = new DeWorker();
         DeWorker1 w1 = new DeWorker1();
         DeWorker2 w2 = new DeWorker2();
 
-        WorkerWrapper<User, String> workerWrapper2 =  new WorkerWrapper.Builder<User, String>()
+        WorkerWrapper<User, String> workerWrapper2 = new WorkerWrapper.Builder<User, String>()
                 .worker(w2)
                 .callback(w2)
                 .id("third")

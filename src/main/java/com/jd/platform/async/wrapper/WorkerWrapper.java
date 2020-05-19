@@ -8,6 +8,7 @@ import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.worker.DependWrapper;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
+import lombok.Synchronized;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -215,7 +216,8 @@ public class WorkerWrapper<T, V> {
         }
     }
 
-    private synchronized void doDependsJobs(ThreadPoolExecutor poolExecutor, List<DependWrapper> dependWrappers, WorkerWrapper fromWrapper, long now, long remainTime) {
+    @Synchronized
+    private void doDependsJobs(ThreadPoolExecutor poolExecutor, List<DependWrapper> dependWrappers, WorkerWrapper fromWrapper, long now, long remainTime) {
         boolean nowDependIsMust = false;
         //创建必须完成的上游wrapper集合
         Set<DependWrapper> mustWrapper = new HashSet<>();
@@ -451,7 +453,7 @@ public class WorkerWrapper<T, V> {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o)  {
+        if (this == o) {
             return true;
         }
         if (o == null || getClass() != o.getClass()) {

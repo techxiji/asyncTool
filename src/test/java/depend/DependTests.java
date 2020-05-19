@@ -3,23 +3,27 @@ package depend;
 import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
+import org.junit.Test;
 
 import java.util.concurrent.ExecutionException;
 
 
 /**
  * 后面请求依赖于前面请求的执行结果
- * @author wuweifeng wrote on 2019-12-26
+ *
+ * @author wuweifeng wrote on 2019-12-26.
+ * @author tony on 2020-05-19 10:03.
  * @version 1.0
  */
-public class Test {
+public class DependTests {
 
-    public static void main(String[] args) throws ExecutionException, InterruptedException {
+    @Test
+    public void workerDepend() throws ExecutionException, InterruptedException {
         DeWorker w = new DeWorker();
         DeWorker1 w1 = new DeWorker1();
         DeWorker2 w2 = new DeWorker2();
 
-        WorkerWrapper<WorkResult<User>, String> workerWrapper2 =  new WorkerWrapper.Builder<WorkResult<User>, String>()
+        WorkerWrapper<WorkResult<User>, String> workerWrapper2 = new WorkerWrapper.Builder<WorkResult<User>, String>()
                 .worker(w2)
                 .callback(w2)
                 .id("third")
@@ -46,8 +50,6 @@ public class Test {
         WorkResult<User> result1 = workerWrapper1.getWorkResult();
         workerWrapper1.setParam(result);
         workerWrapper2.setParam(result1);
-
-
 
 
         Async.beginWork(3500, workerWrapper);
