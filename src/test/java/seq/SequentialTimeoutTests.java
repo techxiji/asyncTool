@@ -4,16 +4,21 @@ package seq;
 import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.wrapper.WorkerWrapper;
+import org.junit.Test;
 
 import java.util.concurrent.ExecutionException;
 
 /**
  * 串行测试
+ *
  * @author wuweifeng wrote on 2019-11-20.
+ * @author tony
  */
 @SuppressWarnings("Duplicates")
-public class TestSequentialTimeout {
-    public static void main(String[] args) throws InterruptedException, ExecutionException {
+public class SequentialTimeoutTests {
+
+    @Test
+    public void sequentialTimeout() throws InterruptedException, ExecutionException {
         testFirstTimeout();
     }
 
@@ -25,7 +30,7 @@ public class TestSequentialTimeout {
      * end-1576719451338
      * cost-862
      */
-    private static void testFirstTimeout() throws ExecutionException, InterruptedException {
+    private void testFirstTimeout() throws ExecutionException, InterruptedException {
         SeqWorker1 w1 = new SeqWorker1();
         SeqWorker2 w2 = new SeqWorker2();
         SeqTimeoutWorker t = new SeqTimeoutWorker();
