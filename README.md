@@ -1,4 +1,4 @@
-注意，该框架我已转移到公司账号：https://gitee.com/jd-platform-opensource/asyncTool  下。更新时会优先更新公司账号，本账号会不定期同步。
+
 
 # 并行框架说明
 有问题、或者有特定的场景需求可以给作者发邮件说明，感谢您的意见。wuweifeng10@jd.com, liwangyang@jd.com
@@ -7,11 +7,13 @@
 
 有对区块链感兴趣的，可以参考项目作者另一个[GVP项目](https://gitee.com/tianyalei/md_blockchain)，java区块链底层入门。
 
+有对高并发场景下，被热key打爆存储层，秒杀等场景中热数据本地缓存、热数据（刷子用户）限流等需要热key探测的，可关注[京东热key探测缓存框架](http://https://gitee.com/jd-platform-opensource/hotkey)。热key框架正在灰度内测期，已上线3000台服务器进行灰度。
+
 
 ## 并行常见的场景
 1 客户端请求服务端接口，该接口需要调用其他N个微服务的接口
 
-`譬如 请求我的订单，那么就需要去调用用户的rpc、商品详情的rpc、库存rpc、优惠券等等好多个服务。同时，这些服务还有相互依赖关系，譬如必须先拿到用户的某个字段后，再去某rpc服务请求数据。 最终全部获取完毕后，或超时了，就汇总结果，返回给客户端。`
+`譬如 请求我的购物车，那么就需要去调用用户的rpc、商品详情的rpc、库存rpc、优惠券等等好多个服务。同时，这些服务还有相互依赖关系，譬如必须先拿到商品id后，才能去库存rpc服务请求库存信息。 最终全部获取完毕后，或超时了，就汇总结果，返回给客户端。`
 
 2 并行执行N个任务，后续根据这1-N个任务的执行结果来决定是否继续执行下一个任务
 
@@ -85,6 +87,8 @@
 
 那么，我的框架也支持这样的场景。可以在编排时，就取A的结果包装类，作为B的入参。虽然此时尚未执行，必然是空，但可以保证A执行完毕后，B的入参会被赋值。
 
+在V1.3后，框架支持在worker的action的入参Map<String, WorkerWrapper>中获取任意一个执行单元的执行结果，当然，可以取其中的1个、多个执行结果作为自己的入参。Key就是在定义wrapper时通过id传进来的唯一id标识。详情demo可以查看test包下dependnew包案例。
+
 ## 并发场景可能存在的需求之——全组任务的超时
 一组任务，虽然内部的各个执行单元的时间不可控，但是我可以控制全组的执行时间不超过某个值。通过设置timeOut，来控制全组的执行阈值。
 
@@ -108,6 +112,6 @@
 
 
 ## 快速开始
-[点此开启实战](https://gitee.com/tianyalei/asyncTool/blob/master/QuickStart.md)
+[点此开启实战](https://gitee.com/jd-platform-opensource/asyncTool/blob/master/QuickStart.md)
 
 

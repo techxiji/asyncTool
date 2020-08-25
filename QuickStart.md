@@ -1,5 +1,38 @@
 如果只是需要用这个框架，请往下看即可。如果需要深入了解这个框架是如何一步一步实现的，从接到需求，到每一步的思考，每个类为什么这么设计，为什么有这些方法，也就是如何从0到1开发出这个框架，作者在[csdn开了专栏](https://blog.csdn.net/tianyaleixiaowu/category_9637010.html)专门讲中间件如何从0开发，包括并不限于这个小框架。京东内部同事可在cf上搜索erp也能看到。
 
+京东同事通过引用如下maven来使用。
+
+```
+            <dependency>
+                <groupId>com.jd.platform</groupId>
+                <artifactId>asyncTool</artifactId>
+                <version>1.3.1-SNAPSHOT</version>
+            </dependency>
+```
+外网请使用jitpack.io上打的包
+先添加repositories节点
+
+```
+        <repositories>
+		<repository>
+		    <id>jitpack.io</id>
+		    <url>https://jitpack.io</url>
+		</repository>
+	</repositories>
+```
+然后添加如下maven依赖
+
+```
+        <dependency>
+	    <groupId>com.gitee.jd-platform-opensource</groupId>
+	    <artifactId>asyncTool</artifactId>
+	    <version>V1.3-SNAPSHOT</version>
+	</dependency>
+```
+
+
+
+
 #### 基本组件
 worker：  一个最小的任务执行单元。通常是一个网络调用，或一段耗时操作。
 
@@ -21,7 +54,7 @@ public interface IWorker<T, V> {
      * @param object
      *         object
      */
-    V action(T object);
+    V action(T object, Map<String, WorkerWrapper> allWrappers);
 
     /**
      * 超时、异常时，返回的默认值
@@ -259,7 +292,12 @@ public class ParWorker1 implements IWorker<String, String>, ICallback<String, St
 
 ![输入图片说明](https://images.gitee.com/uploads/images/2019/1225/133828_0c76624c_303698.png "屏幕截图.png")
 
-4.  其他的详见test包下的测试类，支持各种形式的组合、编排。
+4. 依赖别的worker执行结果作为入参
+
+可以从action的参数中根据wrapper的id获取任意一个执行单元的执行结果，但请注意执行顺序，如果尚未执行，则在调用WorkerResult.getResult()会得到null！
+![输入图片说明](https://images.gitee.com/uploads/images/2020/0511/215924_28af8655_303698.png "屏幕截图.png")![输入图片说明](https://images.gitee.com/uploads/images/2020/0511/215933_12e13dba_303698.png "屏幕截图.png")
+
+5.  其他的详见test包下的测试类，支持各种形式的组合、编排。
 
 
 

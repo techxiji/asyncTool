@@ -1,8 +1,15 @@
 package com.jd.platform.async.worker;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+
 /**
  * 执行结果
  */
+@Builder
+@Data
+@AllArgsConstructor
 public class WorkResult<V> {
     /**
      * 执行的结果
@@ -12,52 +19,28 @@ public class WorkResult<V> {
      * 结果状态
      */
     private ResultState resultState;
+    /**
+     * 异常信息
+     */
     private Exception ex;
 
+    /**
+     * 带结果&状态的构造器
+     *
+     * @param result
+     * @param resultState
+     */
     public WorkResult(V result, ResultState resultState) {
         this(result, resultState, null);
     }
 
-    public WorkResult(V result, ResultState resultState, Exception ex) {
-        this.result = result;
-        this.resultState = resultState;
-        this.ex = ex;
-    }
-
+    /**
+     * 默认结果
+     *
+     * @param <V>
+     * @return
+     */
     public static <V> WorkResult<V> defaultResult() {
-        return new WorkResult<>(null, ResultState.DEFAULT);
-    }
-
-    @Override
-    public String toString() {
-        return "WorkResult{" +
-                "result=" + result +
-                ", resultState=" + resultState +
-                ", ex=" + ex +
-                '}';
-    }
-
-    public Exception getEx() {
-        return ex;
-    }
-
-    public void setEx(Exception ex) {
-        this.ex = ex;
-    }
-
-    public V getResult() {
-        return result;
-    }
-
-    public void setResult(V result) {
-        this.result = result;
-    }
-
-    public ResultState getResultState() {
-        return resultState;
-    }
-
-    public void setResultState(ResultState resultState) {
-        this.resultState = resultState;
+        return (WorkResult<V>) WorkResult.builder().result(null).resultState(ResultState.DEFAULT).build();
     }
 }
