@@ -13,7 +13,7 @@
         <jdk.version>1.8</jdk.version>
         <lombok.version>1.18.12</lombok.version>
         <junit.version>4.13</junit.version>
-        <maven.compiler.plugin.version>3.3</maven.compiler.plugin.version>
+        <maven.compiler.plugin.version>3.8.1</maven.compiler.plugin.version>
     </properties>
 
     <dependencies>
