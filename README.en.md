@@ -8,7 +8,7 @@
 
 
 
- If you just need to use this frame, please look down. If you need to have a deep understanding of how this framework is implemented step by step, from receiving the requirements to thinking about each step, why each class is so designed, why there are these methods, that is, how to develop this framework from 0 to 1, I opened a column in [CSDN] (https://blog.csdn.net/tianaleixiaowu/category_. HTML) to talk about how middleware is developed from 0, including and Not limited to this small frame. JD internal colleagues can search my ERP on CF and see it.
+ If you just need to use this frame, please look down. If you need to have a deep understanding of how this framework is implemented step by step, from receiving the requirements to thinking about each step, why each class is so designed, why there are these methods, that is, how to develop this framework from 0 to 1, I opened a column in [CSDN] (https://blog.csdn.net/tianaleixiaowu/category_. HTML) to talk about how middleware is developed from 0, including and Not limited to this small frame. JD internal colleagues can searchType my ERP on CF and see it.
 
 
 
