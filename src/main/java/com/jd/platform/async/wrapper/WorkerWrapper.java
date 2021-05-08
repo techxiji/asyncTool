@@ -5,80 +5,73 @@ import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.exception.SkippedException;
 import com.jd.platform.async.executor.timer.SystemClock;
-import com.jd.platform.async.worker.DependWrapper;
-import com.jd.platform.async.worker.ResultState;
-import com.jd.platform.async.worker.WorkResult;
+import com.jd.platform.async.worker.*;
+import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
+import com.jd.platform.async.wrapper.actionstrategy.DependMustStrategyMapper;
+import com.jd.platform.async.wrapper.actionstrategy.DependWrapperStrategyMapper;
+import com.jd.platform.async.wrapper.actionstrategy.DependenceAction;
+import com.jd.platform.async.wrapper.actionstrategy.DependenceStrategy;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 对每个worker及callback进行包装，一对一
+ * <p/>
+ * v1.5时将其抽取为抽象类，以解耦并提高扩展性。
  *
  * @author wuweifeng wrote on 2019-11-19.
  */
-public class WorkerWrapper<T, V> {
+public abstract class WorkerWrapper<T, V> {
     /**
      * 该wrapper的唯一标识
      */
-    private String id;
+    protected final String id;
     /**
      * worker将来要处理的param
      */
-    private T param;
-    private IWorker<T, V> worker;
-    private ICallback<T, V> callback;
-    /**
-     * 在自己后面的wrapper，如果没有，自己就是末尾；如果有一个，就是串行；如果有多个，有几个就需要开几个线程</p>
-     * -------2
-     * 1
-     * -------3
-     * 如1后面有2、3
-     */
-    private List<WorkerWrapper<?, ?>> nextWrappers;
-    /**
-     * 依赖的wrappers，有2种情况，1:必须依赖的全部完成后，才能执行自己 2:依赖的任何一个、多个完成了，就可以执行自己
-     * 通过must字段来控制是否依赖项必须完成
-     * 1
-     * -------3
-     * 2
-     * 1、2执行完毕后才能执行3
-     */
-    private List<DependWrapper> dependWrappers;
+    protected T param;
+    protected IWorker<T, V> worker;
+    protected ICallback<T, V> callback;
     /**
      * 标记该事件是否已经被处理过了，譬如已经超时返回false了，后续rpc又收到返回值了，则不再二次回调
      * 经试验,volatile并不能保证"同一毫秒"内,多线程对该值的修改和拉取
      * <p>
      * 1-finish, 2-error, 3-working
      */
-    private AtomicInteger state = new AtomicInteger(0);
-    /**
-     * 该map存放所有wrapper的id和wrapper映射
-     */
-    private Map<String, WorkerWrapper> forParamUseWrappers;
+    protected final AtomicInteger state = new AtomicInteger(0);
     /**
      * 也是个钩子变量，用来存临时的结果
      */
-    private volatile WorkResult<V> workResult = WorkResult.defaultResult();
+    protected volatile WorkResult<V> workResult = WorkResult.defaultResult();
     /**
-     * 是否在执行自己前，去校验nextWrapper的执行结果<p>
-     * 1   4
-     * -------3
-     * 2
-     * 如这种在4执行前，可能3已经执行完毕了（被2执行完后触发的），那么4就没必要执行了。
-     * 注意，该属性仅在nextWrapper数量<=1时有效，>1时的情况是不存在的
+     * 该map存放所有wrapper的id和wrapper映射
+     * <p/>
+     * 需要线程安全。
      */
-    private volatile boolean needCheckNextWrapperResult = true;
+    private Map<String, WorkerWrapper<?, ?>> forParamUseWrappers;
+    /**
+     * 各种策略的封装类。
+     * <p/>
+     * 其实是因为加功能太多导致这个对象大小超过了128Byte，所以强迫症的我不得不把几个字段丢到策略类里面去。
+     * ps: 大小超过128Byte令我(TcSnZh)难受的一比，就像走在草坪的格子上，一步嫌小、两步扯蛋。
+     * IDEA可以使用JOL Java Object Layout插件查看对象大小。
+     */
+    private final WrapperStrategy wrapperStrategy = new WrapperStrategy();
+    /**
+     * 超时检查，该值允许为null。表示不设置。
+     */
+    private volatile TimeOutProperties timeOutProperties;
 
-    private static final int FINISH = 1;
-    private static final int ERROR = 2;
-    private static final int WORKING = 3;
-    private static final int INIT = 0;
+    // *****   state属性的常量值   *****
 
-    private WorkerWrapper(String id, IWorker<T, V> worker, T param, ICallback<T, V> callback) {
+    public static final int FINISH = 1;
+    public static final int ERROR = 2;
+    public static final int WORKING = 3;
+    public static final int INIT = 0;
+
+    WorkerWrapper(String id, IWorker<T, V> worker, T param, ICallback<T, V> callback) {
         if (worker == null) {
             throw new NullPointerException("async.worker is null");
         }
@@ -92,211 +85,69 @@ public class WorkerWrapper<T, V> {
         this.callback = callback;
     }
 
+    // ========== public ==========
+
     /**
-     * 开始工作
-     * fromWrapper代表这次work是由哪个上游wrapper发起的
+     * 外部调用本线程运行此Wrapper的入口方法。
+     *
+     * @param executorService     该ExecutorService将成功运行后，在nextWrapper有多个时被使用于多线程调用。
+     * @param remainTime          剩下的时间
+     * @param forParamUseWrappers 用于保存经过的wrapper的信息的Map，key为id。
+     * @param inspector           wrapper调度检查器
      */
-    private void work(ExecutorService executorService, WorkerWrapper fromWrapper, long remainTime, Map<String, WorkerWrapper> forParamUseWrappers) {
-        this.forParamUseWrappers = forParamUseWrappers;
-        //将自己放到所有wrapper的集合里去
-        forParamUseWrappers.put(id, this);
-        long now = SystemClock.now();
-        //总的已经超时了，就快速失败，进行下一个
-        if (remainTime <= 0) {
-            fastFail(INIT, null);
-            beginNext(executorService, now, remainTime);
-            return;
-        }
-        //如果自己已经执行过了。
-        //可能有多个依赖，其中的一个依赖已经执行完了，并且自己也已开始执行或执行完毕。当另一个依赖执行完毕，又进来该方法时，就不重复处理了
-        if (getState() == FINISH || getState() == ERROR) {
-            beginNext(executorService, now, remainTime);
-            return;
-        }
-
-        //如果在执行前需要校验nextWrapper的状态
-        if (needCheckNextWrapperResult) {
-            //如果自己的next链上有已经出结果或已经开始执行的任务了，自己就不用继续了
-            if (!checkNextWrapperResult()) {
-                fastFail(INIT, new SkippedException());
-                beginNext(executorService, now, remainTime);
-                return;
-            }
-        }
-
-        //如果没有任何依赖，说明自己就是第一批要执行的
-        if (dependWrappers == null || dependWrappers.size() == 0) {
-            fire();
-            beginNext(executorService, now, remainTime);
-            return;
-        }
-
-        /*如果有前方依赖，存在两种情况
-         一种是前面只有一个wrapper。即 A  ->  B
-        一种是前面有多个wrapper。A C D ->   B。需要A、C、D都完成了才能轮到B。但是无论是A执行完，还是C执行完，都会去唤醒B。
-        所以需要B来做判断，必须A、C、D都完成，自己才能执行 */
-
-        //只有一个依赖
-        if (dependWrappers.size() == 1) {
-            doDependsOneJob(fromWrapper);
-            beginNext(executorService, now, remainTime);
-        } else {
-            //有多个依赖时
-            doDependsJobs(executorService, dependWrappers, fromWrapper, now, remainTime);
-        }
-
+    public void work(ExecutorService executorService,
+                     long remainTime,
+                     Map<String, WorkerWrapper<?, ?>> forParamUseWrappers,
+                     WrapperEndingInspector inspector) {
+        work(executorService, null, remainTime, forParamUseWrappers, inspector);
     }
 
+    public String getId() {
+        return id;
+    }
 
-    public void work(ExecutorService executorService, long remainTime, Map<String, WorkerWrapper> forParamUseWrappers) {
-        work(executorService, null, remainTime, forParamUseWrappers);
+    public WorkResult<V> getWorkResult() {
+        return workResult;
+    }
+
+    public void setParam(T param) {
+        this.param = param;
+    }
+
+    public int getState() {
+        return state.get();
     }
 
     /**
-     * 总控制台超时，停止所有任务
+     * 获取之后的下游Wrapper
      */
-    public void stopNow() {
-        if (getState() == INIT || getState() == WORKING) {
-            fastFail(getState(), null);
-        }
-    }
+    public abstract Set<WorkerWrapper<?, ?>> getNextWrappers();
 
     /**
-     * 判断自己下游链路上，是否存在已经出结果的或已经开始执行的
-     * 如果没有返回true，如果有返回false
+     * 使wrapper状态修改为超时失败。（但如果已经执行完成则不会修改）
+     * <p/>
+     * 本方法不会试图执行超时判定逻辑。
+     * 如果要执行超时逻辑判断，请用{@link TimeOutProperties#checkTimeOut(boolean)}并传入参数true。
      */
-    private boolean checkNextWrapperResult() {
-        //如果自己就是最后一个，或者后面有并行的多个，就返回true
-        if (nextWrappers == null || nextWrappers.size() != 1) {
-            return getState() == INIT;
-        }
-        WorkerWrapper nextWrapper = nextWrappers.get(0);
-        boolean state = nextWrapper.getState() == INIT;
-        //继续校验自己的next的状态
-        return state && nextWrapper.checkNextWrapperResult();
-    }
-
-    /**
-     * 进行下一个任务
-     */
-    private void beginNext(ExecutorService executorService, long now, long remainTime) {
-        //花费的时间
-        long costTime = SystemClock.now() - now;
-        if (nextWrappers == null) {
-            return;
-        }
-        if (nextWrappers.size() == 1) {
-            nextWrappers.get(0).work(executorService, WorkerWrapper.this, remainTime - costTime, forParamUseWrappers);
-            return;
-        }
-        CompletableFuture[] futures = new CompletableFuture[nextWrappers.size()];
-        for (int i = 0; i < nextWrappers.size(); i++) {
-            int finalI = i;
-            futures[i] = CompletableFuture.runAsync(() -> nextWrappers.get(finalI)
-                    .work(executorService, WorkerWrapper.this, remainTime - costTime, forParamUseWrappers), executorService);
-        }
-        try {
-            CompletableFuture.allOf(futures).get();
-        } catch (InterruptedException | ExecutionException e) {
-            e.printStackTrace();
+    public void failNow() {
+        int state = getState();
+        if (state == INIT || state == WORKING) {
+            fastFail(state, null);
         }
     }
 
-    private void doDependsOneJob(WorkerWrapper dependWrapper) {
-        if (ResultState.TIMEOUT == dependWrapper.getWorkResult().getResultState()) {
-            workResult = defaultResult();
-            fastFail(INIT, null);
-        } else if (ResultState.EXCEPTION == dependWrapper.getWorkResult().getResultState()) {
-            workResult = defaultExResult(dependWrapper.getWorkResult().getEx());
-            fastFail(INIT, null);
-        } else {
-            //前面任务正常完毕了，该自己了
-            fire();
-        }
+    public WrapperStrategy getWrapperStrategy() {
+        return wrapperStrategy;
     }
 
-    private synchronized void doDependsJobs(ExecutorService executorService, List<DependWrapper> dependWrappers, WorkerWrapper fromWrapper, long now, long remainTime) {
-        boolean nowDependIsMust = false;
-        //创建必须完成的上游wrapper集合
-        Set<DependWrapper> mustWrapper = new HashSet<>();
-        for (DependWrapper dependWrapper : dependWrappers) {
-            if (dependWrapper.isMust()) {
-                mustWrapper.add(dependWrapper);
-            }
-            if (dependWrapper.getDependWrapper().equals(fromWrapper)) {
-                nowDependIsMust = dependWrapper.isMust();
-            }
-        }
-
-        //如果全部是不必须的条件，那么只要到了这里，就执行自己。
-        if (mustWrapper.size() == 0) {
-            if (ResultState.TIMEOUT == fromWrapper.getWorkResult().getResultState()) {
-                fastFail(INIT, null);
-            } else {
-                fire();
-            }
-            beginNext(executorService, now, remainTime);
-            return;
-        }
-
-        //如果存在需要必须完成的，且fromWrapper不是必须的，就什么也不干
-        if (!nowDependIsMust) {
-            return;
-        }
-
-        //如果fromWrapper是必须的
-        boolean existNoFinish = false;
-        boolean hasError = false;
-        //先判断前面必须要执行的依赖任务的执行结果，如果有任何一个失败，那就不用走action了，直接给自己设置为失败，进行下一步就是了
-        for (DependWrapper dependWrapper : mustWrapper) {
-            WorkerWrapper workerWrapper = dependWrapper.getDependWrapper();
-            WorkResult tempWorkResult = workerWrapper.getWorkResult();
-            //为null或者isWorking，说明它依赖的某个任务还没执行到或没执行完
-            if (workerWrapper.getState() == INIT || workerWrapper.getState() == WORKING) {
-                existNoFinish = true;
-                break;
-            }
-            if (ResultState.TIMEOUT == tempWorkResult.getResultState()) {
-                workResult = defaultResult();
-                hasError = true;
-                break;
-            }
-            if (ResultState.EXCEPTION == tempWorkResult.getResultState()) {
-                workResult = defaultExResult(workerWrapper.getWorkResult().getEx());
-                hasError = true;
-                break;
-            }
-
-        }
-        //只要有失败的
-        if (hasError) {
-            fastFail(INIT, null);
-            beginNext(executorService, now, remainTime);
-            return;
-        }
-
-        //如果上游都没有失败，分为两种情况，一种是都finish了，一种是有的在working
-        //都finish的话
-        if (!existNoFinish) {
-            //上游都finish了，进行自己
-            fire();
-            beginNext(executorService, now, remainTime);
-            return;
-        }
-    }
-
-    /**
-     * 执行自己的job.具体的执行是在另一个线程里,但判断阻塞超时是在work线程
-     */
-    private void fire() {
-        //阻塞取结果
-        workResult = workerDoJob();
-    }
+    // ========== protected ==========
 
     /**
      * 快速失败
+     *
+     * @return 已经失败则返回false，如果刚才设置为失败了则返回true。
      */
-    private boolean fastFail(int expect, Exception e) {
+    protected boolean fastFail(int expect, Exception e) {
         //试图将它从expect状态,改成Error
         if (!compareAndSetState(expect, ERROR)) {
             return false;
@@ -305,305 +156,565 @@ public class WorkerWrapper<T, V> {
         //尚未处理过结果
         if (checkIsNullResult()) {
             if (e == null) {
-                workResult = defaultResult();
+                workResult.setResultState(ResultState.TIMEOUT);
             } else {
-                workResult = defaultExResult(e);
+                workResult.setResultState(ResultState.EXCEPTION);
+                workResult.setEx(e);
             }
+            workResult.setResult(worker.defaultValue());
         }
-
         callback.result(false, param, workResult);
         return true;
     }
 
     /**
-     * 具体的单个worker执行任务
+     * 判断{@link #state}状态是否是初始值。
      */
-    private WorkResult<V> workerDoJob() {
+    protected boolean checkIsNullResult() {
+        return ResultState.DEFAULT == workResult.getResultState();
+    }
+
+    protected boolean compareAndSetState(int expect, int update) {
+        return this.state.compareAndSet(expect, update);
+    }
+
+    /**
+     * 工作的核心方法。
+     *
+     * @param fromWrapper 代表这次work是由哪个上游wrapper发起的。如果是首个Wrapper则为null。
+     * @param remainTime  剩余时间。
+     */
+    protected void work(ExecutorService executorService,
+                        WorkerWrapper<?, ?> fromWrapper,
+                        long remainTime,
+                        Map<String, WorkerWrapper<?, ?>> forParamUseWrappers,
+                        WrapperEndingInspector inspector) {
+        this.setForParamUseWrappers(forParamUseWrappers);
+        //将自己放到所有wrapper的集合里去
+        forParamUseWrappers.put(id, this);
+        long now = SystemClock.now();
+        //总的已经超时了，就快速失败，进行下一个
+        if (remainTime <= 0) {
+            fastFail(INIT, null);
+            beginNext(executorService, now, remainTime, inspector);
+            return;
+        }
+        //如果自己已经执行过了。
+        //可能有多个依赖，其中的一个依赖已经执行完了，并且自己也已开始执行或执行完毕。当另一个依赖执行完毕，又进来该方法时，就不重复处理了
+        if (getState() == FINISH || getState() == ERROR) {
+            beginNext(executorService, now, remainTime, inspector);
+            return;
+        }
+
+        // 判断是否要跳过自己，该方法可能会跳过正在工作的自己。
+        final WrapperStrategy wrapperStrategy = getWrapperStrategy();
+        if (wrapperStrategy.shouldSkip(getNextWrappers(), this, fromWrapper)) {
+            fastFail(INIT, new SkippedException());
+            beginNext(executorService, now, remainTime, inspector);
+            return;
+        }
+
+        //如果没有任何依赖，说明自己就是第一批要执行的
+        final Set<WorkerWrapper<?, ?>> dependWrappers = getDependWrappers();
+        if (dependWrappers == null || dependWrappers.size() == 0) {
+            fire();
+            beginNext(executorService, now, remainTime, inspector);
+            return;
+        }
+
+        DependenceAction.WithProperty judge = wrapperStrategy.judgeAction(dependWrappers, this, fromWrapper);
+
+        switch (judge.getDependenceAction()) {
+            case TAKE_REST:
+                inspector.reduceWrapper(this);
+                return;
+            case FAST_FAIL:
+                switch (judge.getResultState()) {
+                    case TIMEOUT:
+                        fastFail(INIT, null);
+                        break;
+                    case EXCEPTION:
+                        fastFail(INIT, judge.getFastFailException());
+                        break;
+                    default:
+                        fastFail(INIT, new RuntimeException("ResultState " + judge.getResultState() + " set to FAST_FAIL"));
+                        break;
+                }
+                beginNext(executorService, now, remainTime, inspector);
+                break;
+            case START_WORK:
+                fire();
+                beginNext(executorService, now, remainTime, inspector);
+                break;
+            case JUDGE_BY_AFTER:
+            default:
+                inspector.reduceWrapper(this);
+                throw new IllegalStateException("策略配置错误，不应当在WorkerWrapper中返回JUDGE_BY_AFTER或其他无效值 : this=" + this + ",fromWrapper=" + fromWrapper);
+        }
+    }
+
+    /**
+     * 进行下一个任务
+     */
+    protected void beginNext(ExecutorService executorService, long now, long remainTime, WrapperEndingInspector inspector) {
+        //花费的时间
+        final long costTime = SystemClock.now() - now;
+        final long nextRemainTIme = remainTime - costTime;
+        Set<WorkerWrapper<?, ?>> nextWrappers = getNextWrappers();
+        if (nextWrappers == null) {
+            inspector.setWrapperEndWithTryPolling(this);
+            return;
+        }
+        // nextWrappers只有一个，就用本线程继续跑。
+        if (nextWrappers.size() == 1) {
+            try {
+                WorkerWrapper<?, ?> next = nextWrappers.stream().findFirst().get();
+                inspector.addWrapper(next);
+                next.work(executorService, WorkerWrapper.this, nextRemainTIme, getForParamUseWrappers(), inspector);
+            } finally {
+                inspector.setWrapperEndWithTryPolling(this);
+            }
+            return;
+        }
+        // nextWrappers有多个
+        try {
+            inspector.addWrapper(nextWrappers);
+            nextWrappers.forEach(next -> executorService.submit(() ->
+                    next.work(executorService, this, nextRemainTIme, getForParamUseWrappers(), inspector))
+            );
+        } finally {
+            inspector.setWrapperEndWithTryPolling(this);
+        }
+    }
+
+    /**
+     * 本工作线程执行自己的job.判断阻塞超时这里开始时会判断一次总超时时间，但在轮询线程会判断单个wrapper超时时间，并也会判断总超时时间。
+     */
+    protected void fire() {
+        //阻塞取结果
         //避免重复执行
         if (!checkIsNullResult()) {
-            return workResult;
+            return;
         }
         try {
             //如果已经不是init状态了，说明正在被执行或已执行完毕。这一步很重要，可以保证任务不被重复执行
             if (!compareAndSetState(INIT, WORKING)) {
-                return workResult;
+                return;
             }
-
-            callback.begin();
-
-            //执行耗时操作
-            V resultValue = worker.action(param, forParamUseWrappers);
-
+            V resultValue;
+            try {
+                callback.begin();
+                if (timeOutProperties != null) {
+                    timeOutProperties.startWorking();
+                }
+                //执行耗时操作
+                resultValue = (V) worker.action(param, (Map) getForParamUseWrappers());
+            } finally {
+                if (timeOutProperties != null) {
+                    timeOutProperties.endWorking();
+                }
+            }
             //如果状态不是在working,说明别的地方已经修改了
             if (!compareAndSetState(WORKING, FINISH)) {
-                return workResult;
+                return;
             }
-
             workResult.setResultState(ResultState.SUCCESS);
             workResult.setResult(resultValue);
             //回调成功
             callback.result(true, param, workResult);
-
-            return workResult;
         } catch (Exception e) {
             //避免重复回调
             if (!checkIsNullResult()) {
-                return workResult;
+                return;
             }
             fastFail(WORKING, e);
-            return workResult;
         }
     }
 
-    public WorkResult<V> getWorkResult() {
-        return workResult;
-    }
-
-    public List<WorkerWrapper<?, ?>> getNextWrappers() {
-        return nextWrappers;
-    }
-
-    public void setParam(T param) {
-        this.param = param;
-    }
-
-    private boolean checkIsNullResult() {
-        return ResultState.DEFAULT == workResult.getResultState();
-    }
-
-    private void addDepend(WorkerWrapper<?, ?> workerWrapper, boolean must) {
-        addDepend(new DependWrapper(workerWrapper, must));
-    }
-
-    private void addDepend(DependWrapper dependWrapper) {
-        if (dependWrappers == null) {
-            dependWrappers = new ArrayList<>();
-        }
-        //如果依赖的是重复的同一个，就不重复添加了
-        for (DependWrapper wrapper : dependWrappers) {
-            if (wrapper.equals(dependWrapper)) {
-                return;
-            }
-        }
-        dependWrappers.add(dependWrapper);
-    }
-
-    private void addNext(WorkerWrapper<?, ?> workerWrapper) {
-        if (nextWrappers == null) {
-            nextWrappers = new ArrayList<>();
-        }
-        //避免添加重复
-        for (WorkerWrapper wrapper : nextWrappers) {
-            if (workerWrapper.equals(wrapper)) {
-                return;
-            }
-        }
-        nextWrappers.add(workerWrapper);
-    }
-
-    private void addNextWrappers(List<WorkerWrapper<?, ?>> wrappers) {
-        if (wrappers == null) {
-            return;
-        }
-        for (WorkerWrapper<?, ?> wrapper : wrappers) {
-            addNext(wrapper);
-        }
-    }
-
-    private void addDependWrappers(List<DependWrapper> dependWrappers) {
-        if (dependWrappers == null) {
-            return;
-        }
-        for (DependWrapper wrapper : dependWrappers) {
-            addDepend(wrapper);
-        }
-    }
-
-    private WorkResult<V> defaultResult() {
-        workResult.setResultState(ResultState.TIMEOUT);
-        workResult.setResult(worker.defaultValue());
-        return workResult;
-    }
-
-    private WorkResult<V> defaultExResult(Exception ex) {
-        workResult.setResultState(ResultState.EXCEPTION);
-        workResult.setResult(worker.defaultValue());
-        workResult.setEx(ex);
-        return workResult;
-    }
-
-
-    private int getState() {
-        return state.get();
-    }
-
-    public String getId() {
-        return id;
-    }
-
-    private boolean compareAndSetState(int expect, int update) {
-        return this.state.compareAndSet(expect, update);
-    }
-
-    private void setNeedCheckNextWrapperResult(boolean needCheckNextWrapperResult) {
-        this.needCheckNextWrapperResult = needCheckNextWrapperResult;
-    }
+    // ========== hashcode and equals ==========
 
     @Override
     public boolean equals(Object o) {
-        if (this == o)  {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-        WorkerWrapper<?, ?> that = (WorkerWrapper<?, ?>) o;
-        return needCheckNextWrapperResult == that.needCheckNextWrapperResult &&
-                Objects.equals(param, that.param) &&
-                Objects.equals(worker, that.worker) &&
-                Objects.equals(callback, that.callback) &&
-                Objects.equals(nextWrappers, that.nextWrappers) &&
-                Objects.equals(dependWrappers, that.dependWrappers) &&
-                Objects.equals(state, that.state) &&
-                Objects.equals(workResult, that.workResult);
+        return super.equals(o);
     }
 
+    /**
+     * {@code return id.hashCode();}返回id值的hashcode
+     */
     @Override
     public int hashCode() {
-        return Objects.hash(param, worker, callback, nextWrappers, dependWrappers, state, workResult, needCheckNextWrapperResult);
+        // final String id can use to .hashcode() .
+        return id.hashCode();
     }
 
-    public static class Builder<W, C> {
+    // ========== Builder ==========
+
+    public static <T, V> WorkerWrapperBuilder<T, V> builder() {
+        return new Builder<>();
+    }
+
+    /**
+     * 自v1.5，该类被抽取到{@link StableWorkerWrapperBuilder}抽象类，兼容之前的版本。
+     */
+    public static class Builder<W, C> extends StableWorkerWrapperBuilder<W, C, Builder<W, C>> {
         /**
-         * 该wrapper的唯一标识
+         * @deprecated 建议使用 {@link #builder()}返回{@link WorkerWrapperBuilder}接口，以调用v1.5之后的规范api
          */
-        private String id = UUID.randomUUID().toString();
+        @Deprecated
+        public Builder() {
+        }
+    }
+
+    // ========== package access methods , for example , some getter/setter that doesn't want to be public ==========
+
+    T getParam() {
+        return param;
+    }
+
+    IWorker<T, V> getWorker() {
+        return worker;
+    }
+
+    void setWorker(IWorker<T, V> worker) {
+        this.worker = worker;
+    }
+
+    ICallback<T, V> getCallback() {
+        return callback;
+    }
+
+    void setCallback(ICallback<T, V> callback) {
+        this.callback = callback;
+    }
+
+    void setState(int state) {
+        this.state.set(state);
+    }
+
+    Map<String, WorkerWrapper<?, ?>> getForParamUseWrappers() {
+        return forParamUseWrappers;
+    }
+
+    void setForParamUseWrappers(Map<String, WorkerWrapper<?, ?>> forParamUseWrappers) {
+        this.forParamUseWrappers = forParamUseWrappers;
+    }
+
+    void setWorkResult(WorkResult<V> workResult) {
+        this.workResult = workResult;
+    }
+
+    abstract void setNextWrappers(Set<WorkerWrapper<?, ?>> nextWrappers);
+
+    abstract Set<WorkerWrapper<?, ?>> getDependWrappers();
+
+    abstract void setDependWrappers(Set<WorkerWrapper<?, ?>> dependWrappers);
+
+    TimeOutProperties getTimeOut() {
+        return timeOutProperties;
+    }
+
+    void setTimeOut(TimeOutProperties timeOutProperties) {
+        this.timeOutProperties = timeOutProperties;
+    }
+
+    // ========== toString ==========
+
+    @Override
+    public String toString() {
+        final StringBuilder sb = new StringBuilder(200)
+                .append("WorkerWrapper{id=").append(id)
+                .append(", param=").append(param)
+                .append(", worker=").append(worker)
+                .append(", callback=").append(callback)
+                .append(", state=");
+        int state = this.state.get();
+        if (state == FINISH) {
+            sb.append("FINISH");
+        } else if (state == WORKING) {
+            sb.append("WORKING");
+        } else if (state == INIT) {
+            sb.append("INIT");
+        } else if (state == ERROR) {
+            sb.append("ERROR");
+        } else {
+            throw new IllegalStateException("unknown state : " + state);
+        }
+        sb
+                .append(", workResult=").append(workResult)
+                // 防止循环引用，这里只输出相关Wrapper的id
+                .append(", forParamUseWrappers::getId=[");
+        getForParamUseWrappers().keySet().forEach(wrapperId -> sb.append(wrapperId).append(", "));
+        if (getForParamUseWrappers().keySet().size() > 0) {
+            sb.delete(sb.length() - 2, sb.length());
+        }
+        sb
+                .append("], dependWrappers::getId=[");
+        getDependWrappers().stream().map(WorkerWrapper::getId).forEach(wrapperId -> sb.append(wrapperId).append(", "));
+        if (getDependWrappers().size() > 0) {
+            sb.delete(sb.length() - 2, sb.length());
+        }
+        sb
+                .append("], nextWrappers::getId=[");
+        getNextWrappers().stream().map(WorkerWrapper::getId).forEach(wrapperId -> sb.append(wrapperId).append(", "));
+        if (getNextWrappers().size() > 0) {
+            sb.delete(sb.length() - 2, sb.length());
+        }
+        sb
+                .append("]")
+                .append(", wrapperStrategy=").append(getWrapperStrategy())
+                .append(", timeOutProperties=").append(getTimeOut())
+                .append('}');
+        return sb.toString();
+    }
+
+    public static class WrapperStrategy implements DependenceStrategy, SkipStrategy {
+
+        // ========== 这三个属性用来判断是否要开始工作 ==========
+
+        // 从前往后依次判断的顺序为 dependWrapperStrategyMapper -> dependMustStrategyMapper -> dependenceStrategy
+
         /**
-         * worker将来要处理的param
+         * 对特殊Wrapper专用的依赖响应策略。
+         * <b>该值允许为null</b>
          */
-        private W param;
-        private IWorker<W, C> worker;
-        private ICallback<W, C> callback;
+        private DependWrapperStrategyMapper dependWrapperStrategyMapper;
         /**
-         * 自己后面的所有
+         * 对必须完成的（must的）Wrapper的依赖响应策略。
+         * <b>该值允许为null</b>
+         * <p/>
+         * 这是一个不得不向历史妥协的属性。用于适配must开关方式。
          */
-        private List<WorkerWrapper<?, ?>> nextWrappers;
+        private DependMustStrategyMapper dependMustStrategyMapper;
         /**
-         * 自己依赖的所有
+         * 依赖响应全局策略。
          */
-        private List<DependWrapper> dependWrappers;
+        private DependenceStrategy dependenceStrategy;
+
+        @Override
+        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
+                                                         WorkerWrapper<?, ?> thisWrapper,
+                                                         WorkerWrapper<?, ?> fromWrapper) {
+            // 如果存在依赖，则调用三层依赖响应策略进行判断
+            DependenceStrategy strategy = dependWrapperStrategyMapper;
+            if (dependMustStrategyMapper != null) {
+                strategy = strategy == null ? dependMustStrategyMapper : strategy.thenJudge(dependMustStrategyMapper);
+            }
+            if (dependenceStrategy != null) {
+                strategy = strategy == null ? dependenceStrategy : strategy.thenJudge(dependenceStrategy);
+            }
+            if (strategy == null) {
+                throw new IllegalStateException("配置无效，三层判断策略均为null，请开发者检查自己的Builder是否逻辑错误！");
+            }
+            return strategy.judgeAction(dependWrappers, thisWrapper, fromWrapper);
+        }
+
+        public DependWrapperStrategyMapper getDependWrapperStrategyMapper() {
+            return dependWrapperStrategyMapper;
+        }
+
+        public void setDependWrapperStrategyMapper(DependWrapperStrategyMapper dependWrapperStrategyMapper) {
+            this.dependWrapperStrategyMapper = dependWrapperStrategyMapper;
+        }
+
+        public DependMustStrategyMapper getDependMustStrategyMapper() {
+            return dependMustStrategyMapper;
+        }
+
+        public void setDependMustStrategyMapper(DependMustStrategyMapper dependMustStrategyMapper) {
+            this.dependMustStrategyMapper = dependMustStrategyMapper;
+        }
+
+        public DependenceStrategy getDependenceStrategy() {
+            return dependenceStrategy;
+        }
+
+        public void setDependenceStrategy(DependenceStrategy dependenceStrategy) {
+            this.dependenceStrategy = dependenceStrategy;
+        }
+
+        // ========== 跳过策略 ==========
+
+        private SkipStrategy skipStrategy;
+
+        @Override
+        public boolean shouldSkip(Set<WorkerWrapper<?, ?>> nextWrappers, WorkerWrapper<?, ?> thisWrapper, WorkerWrapper<?, ?> fromWrapper) {
+            return skipStrategy != null && skipStrategy.shouldSkip(nextWrappers, thisWrapper, fromWrapper);
+        }
+
+        public SkipStrategy getSkipStrategy() {
+            return skipStrategy;
+        }
+
+        public void setSkipStrategy(SkipStrategy skipStrategy) {
+            this.skipStrategy = skipStrategy;
+        }
+
+        // ========== toString ==========
+
+        @Override
+        public String toString() {
+            return "WrapperStrategy{" +
+                    "dependWrapperStrategyMapper=" + dependWrapperStrategyMapper +
+                    ", dependMustStrategyMapper=" + dependMustStrategyMapper +
+                    ", dependenceStrategy=" + dependenceStrategy +
+                    ", skipStrategy=" + skipStrategy +
+                    '}';
+        }
+    }
+
+    public static class TimeOutProperties {
+        private final boolean enable;
+        private final long time;
+        private final TimeUnit unit;
+        private final boolean allowInterrupt;
+        private final WorkerWrapper<?, ?> wrapper;
+
+        private final Object lock = new Object();
+
+        private volatile boolean started = false;
+        private volatile boolean ended = false;
+        private volatile long startWorkingTime;
+        private volatile long endWorkingTime;
+        private volatile Thread doWorkingThread;
+
+        public TimeOutProperties(boolean enable, long time, TimeUnit unit, boolean allowInterrupt, WorkerWrapper<?, ?> wrapper) {
+            this.enable = enable;
+            this.time = time;
+            this.unit = unit;
+            this.allowInterrupt = allowInterrupt;
+            this.wrapper = wrapper;
+        }
+
+        // ========== 工作线程调用 ==========
+
+        public void startWorking() {
+            synchronized (lock) {
+                started = true;
+                startWorkingTime = SystemClock.now();
+                doWorkingThread = Thread.currentThread();
+            }
+        }
+
+        public void endWorking() {
+            synchronized (lock) {
+                ended = true;
+                doWorkingThread = null;
+                endWorkingTime = SystemClock.now();
+            }
+        }
+
+        // ========== 轮询线程调用 ==========
+
         /**
-         * 存储强依赖于自己的wrapper集合
+         * 检查超时。
+         * 可以将boolean参数传入true以在超时的时候直接失败。
+         *
+         * @param withStop 如果为false，不会发生什么，仅仅是单纯的判断是否超时。
+         *                 如果为true，则会去快速失败wrapper{@link #failNow()}，有必要的话还会打断线程。
+         * @return 如果 超时 或 执行时间超过限制 返回true；未超时返回false。
          */
-        private Set<WorkerWrapper<?, ?>> selfIsMustSet;
-
-        private boolean needCheckNextWrapperResult = true;
-
-        public Builder<W, C> worker(IWorker<W, C> worker) {
-            this.worker = worker;
-            return this;
-        }
-
-        public Builder<W, C> param(W w) {
-            this.param = w;
-            return this;
-        }
-
-        public Builder<W, C> id(String id) {
-            if (id != null) {
-                this.id = id;
-            }
-            return this;
-        }
-
-        public Builder<W, C> needCheckNextWrapperResult(boolean needCheckNextWrapperResult) {
-            this.needCheckNextWrapperResult = needCheckNextWrapperResult;
-            return this;
-        }
-
-        public Builder<W, C> callback(ICallback<W, C> callback) {
-            this.callback = callback;
-            return this;
-        }
-
-        public Builder<W, C> depend(WorkerWrapper<?, ?>... wrappers) {
-            if (wrappers == null) {
-                return this;
-            }
-            for (WorkerWrapper<?, ?> wrapper : wrappers) {
-                depend(wrapper);
-            }
-            return this;
-        }
-
-        public Builder<W, C> depend(WorkerWrapper<?, ?> wrapper) {
-            return depend(wrapper, true);
-        }
-
-        public Builder<W, C> depend(WorkerWrapper<?, ?> wrapper, boolean isMust) {
-            if (wrapper == null) {
-                return this;
-            }
-            DependWrapper dependWrapper = new DependWrapper(wrapper, isMust);
-            if (dependWrappers == null) {
-                dependWrappers = new ArrayList<>();
-            }
-            dependWrappers.add(dependWrapper);
-            return this;
-        }
-
-        public Builder<W, C> next(WorkerWrapper<?, ?> wrapper) {
-            return next(wrapper, true);
-        }
-
-        public Builder<W, C> next(WorkerWrapper<?, ?> wrapper, boolean selfIsMust) {
-            if (nextWrappers == null) {
-                nextWrappers = new ArrayList<>();
-            }
-            nextWrappers.add(wrapper);
-
-            //强依赖自己
-            if (selfIsMust) {
-                if (selfIsMustSet == null) {
-                    selfIsMustSet = new HashSet<>();
-                }
-                selfIsMustSet.add(wrapper);
-            }
-            return this;
-        }
-
-        public Builder<W, C> next(WorkerWrapper<?, ?>... wrappers) {
-            if (wrappers == null) {
-                return this;
-            }
-            for (WorkerWrapper<?, ?> wrapper : wrappers) {
-                next(wrapper);
-            }
-            return this;
-        }
-
-        public WorkerWrapper<W, C> build() {
-            WorkerWrapper<W, C> wrapper = new WorkerWrapper<>(id, worker, param, callback);
-            wrapper.setNeedCheckNextWrapperResult(needCheckNextWrapperResult);
-            if (dependWrappers != null) {
-                for (DependWrapper workerWrapper : dependWrappers) {
-                    workerWrapper.getDependWrapper().addNext(wrapper);
-                    wrapper.addDepend(workerWrapper);
-                }
-            }
-            if (nextWrappers != null) {
-                for (WorkerWrapper<?, ?> workerWrapper : nextWrappers) {
-                    boolean must = false;
-                    if (selfIsMustSet != null && selfIsMustSet.contains(workerWrapper)) {
-                        must = true;
+        public boolean checkTimeOut(boolean withStop) {
+            if (enable) {
+                synchronized (lock) {
+                    if (started) {
+                        // 判断执行中的wrapper是否超时
+                        long dif = (ended ? endWorkingTime : SystemClock.now()) - startWorkingTime;
+                        if (dif > unit.toMillis(time)) {
+                            if (withStop) {
+                                if (allowInterrupt) {
+                                    doWorkingThread.interrupt();
+                                }
+                                wrapper.failNow();
+                                ended = true;
+                            }
+                            return true;
+                        }
+                        return false;
                     }
-                    workerWrapper.addDepend(wrapper, must);
-                    wrapper.addNext(workerWrapper);
                 }
             }
-
-            return wrapper;
+            return false;
         }
 
+        // ========== package ==========
+
+        boolean isEnable() {
+            return enable;
+        }
+
+        long getTime() {
+            return time;
+        }
+
+        TimeUnit getUnit() {
+            return unit;
+        }
+
+        boolean isAllowInterrupt() {
+            return allowInterrupt;
+        }
+
+        Object getLock() {
+            return lock;
+        }
+
+        boolean isStarted() {
+            return started;
+        }
+
+        void setStarted(boolean started) {
+            this.started = started;
+        }
+
+        boolean isEnded() {
+            return ended;
+        }
+
+        void setEnded(boolean ended) {
+            this.ended = ended;
+        }
+
+        long getStartWorkingTime() {
+            return startWorkingTime;
+        }
+
+        void setStartWorkingTime(long startWorkingTime) {
+            this.startWorkingTime = startWorkingTime;
+        }
+
+        long getEndWorkingTime() {
+            return endWorkingTime;
+        }
+
+        void setEndWorkingTime(long endWorkingTime) {
+            this.endWorkingTime = endWorkingTime;
+        }
+
+        Thread getDoWorkingThread() {
+            return doWorkingThread;
+        }
+
+        void setDoWorkingThread(Thread doWorkingThread) {
+            this.doWorkingThread = doWorkingThread;
+        }
+
+
+        // ========== toString ==========
+
+        @Override
+        public String toString() {
+            return "TimeOutProperties{" +
+                    "enable=" + enable +
+                    ", time=" + time +
+                    ", unit=" + unit +
+                    ", allowInterrupt=" + allowInterrupt +
+                    ", wrapper::getId=" + wrapper.getId() +
+                    ", started=" + started +
+                    ", ended=" + ended +
+                    ", startWorkingTime=" + startWorkingTime +
+                    ", endWorkingTime=" + endWorkingTime +
+                    ", doWorkingThread=" + doWorkingThread +
+                    '}';
+        }
     }
 }
