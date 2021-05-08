@@ -1,6 +1,6 @@
 package com.jd.platform.async.wrapper.actionstrategy;
 
-import com.jd.platform.async.executor.WrapperEndingInspector;
+import com.jd.platform.async.wrapper.WrapperEndingInspector;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
@@ -231,5 +231,25 @@ public interface DependenceStrategy {
             }
         };
     }
+
+    DependenceStrategy  IF_MUST_SET_NOT_EMPTY_ALL_SUCCESS_ELSE_ANY = new DependenceStrategy() {
+        @Override
+        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
+                                                         WorkerWrapper<?, ?> thisWrapper,
+                                                         WorkerWrapper<?, ?> fromWrapper) {
+            DependMustStrategyMapper mustMapper = thisWrapper.getWrapperStrategy().getDependMustStrategyMapper();
+            if (mustMapper != null && !mustMapper.getMustDependSet().isEmpty()) {
+                //  至少有一个must，则因为must未完全完成而等待。
+                return DependenceAction.TAKE_REST.emptyProperty();
+            }
+            // 如果一个must也没有，则认为应该是ANY模式。
+            return DependenceStrategy.ALL_DEPENDENCIES_ANY_SUCCESS.judgeAction(dependWrappers, thisWrapper, fromWrapper);
+        }
+
+        @Override
+        public String toString() {
+            return "IF_MUST_SET_NOT_EMPTY_ALL_SUCCESS_ELSE_ANY";
+        }
+    };
 
 }

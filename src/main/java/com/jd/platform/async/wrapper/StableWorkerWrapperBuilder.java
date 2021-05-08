@@ -7,6 +7,7 @@ import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
 import com.jd.platform.async.wrapper.actionstrategy.*;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 一个稳定的Builder，兼容1.4版本之前的代码。
@@ -86,7 +87,17 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
      * {@link #useV15DeprecatedMustDependApi}
      */
     private boolean useV15NewDependApi = false;
+    /**
+     * 单个Wrapper超时相关属性
+     */
+    private boolean enableTimeOut = false;
+    private long time = -1;
+    private TimeUnit unit = null;
+    private boolean allowInterrupt = false;
 
+    /**
+     * 标记自己正在building
+     */
     private boolean isBuilding = false;
 
     @Override
@@ -234,6 +245,40 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
     }
 
     @Override
+    public SetTimeOut<T, V> setTimeOut() {
+        return new SetTimeOutImpl();
+    }
+
+    public class SetTimeOutImpl implements SetTimeOut<T, V> {
+        @Override
+        public SetTimeOutImpl enableTimeOut(boolean enableElseDisable) {
+            StableWorkerWrapperBuilder.this.enableTimeOut = enableElseDisable;
+            return this;
+        }
+
+        @Override
+        public SetTimeOutImpl setTime(long time, TimeUnit unit) {
+            if (time <= 0 || unit == null) {
+                throw new IllegalStateException("Illegal argument : time=" + time + " must > 0, unit=" + unit + " must not null");
+            }
+            StableWorkerWrapperBuilder.this.time = time;
+            StableWorkerWrapperBuilder.this.unit = unit;
+            return this;
+        }
+
+        @Override
+        public SetTimeOutImpl allowInterrupt(boolean allow) {
+            StableWorkerWrapperBuilder.this.allowInterrupt = allow;
+            return this;
+        }
+
+        @Override
+        public BUILDER_SUB_CLASS end() {
+            return returnThisBuilder();
+        }
+    }
+
+    @Override
     public WorkerWrapper<T, V> build() {
         isBuilding = true;
         WorkerWrapper<T, V> wrapper = new StableWorkerWrapper<>(
@@ -264,25 +309,7 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
                     wrapper.getWrapperStrategy().setDependMustStrategyMapper(new DependMustStrategyMapper()
                             .addDependMust(mustDependSet));
                 }
-                wrapper.getWrapperStrategy().setDependenceStrategy(new DependenceStrategy() {
-                    @Override
-                    public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
-                                                                     WorkerWrapper<?, ?> thisWrapper,
-                                                                     WorkerWrapper<?, ?> fromWrapper) {
-                        DependMustStrategyMapper mustMapper = thisWrapper.getWrapperStrategy().getDependMustStrategyMapper();
-                        if (mustMapper != null && mustMapper.getMustDependSet().size() > 0) {
-                            //  至少有一个must，则因为must未完全完成而等待。
-                            return DependenceAction.TAKE_REST.emptyProperty();
-                        }
-                        // 如果一个must也没有，则认为应该是ANY模式。
-                        return DependenceStrategy.ALL_DEPENDENCIES_ANY_SUCCESS.judgeAction(dependWrappers, thisWrapper, fromWrapper);
-                    }
-
-                    @Override
-                    public String toString() {
-                        return "IF_HAS_MUST_ALL_MUST_ELSE_ANY";
-                    }
-                });
+                wrapper.getWrapperStrategy().setDependenceStrategy(DependenceStrategy.IF_MUST_SET_NOT_EMPTY_ALL_SUCCESS_ELSE_ANY);
             } else {
                 if (mustDependSet != null && mustDependSet.size() > 0) {
                     wrapper.getWrapperStrategy().setDependMustStrategyMapper(new DependMustStrategyMapper().addDependMust(mustDependSet));
@@ -315,6 +342,18 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
                 );
             } else {
                 wrapper.getWrapperStrategy().setSkipStrategy(skipStrategy);
+            }
+        }
+        // ========== 设置单wrapper超时检查 ==========
+        {
+            if (enableTimeOut) {
+                if (time <= 0) {
+                    throw new IllegalStateException("timeout time " + time + " must > " + 0);
+                }
+                if (unit == null) {
+                    throw new IllegalStateException("timeout unit must not null");
+                }
+                wrapper.setTimeOut(new WorkerWrapper.TimeOutProperties(true, time, unit, allowInterrupt, wrapper));
             }
         }
         return wrapper;

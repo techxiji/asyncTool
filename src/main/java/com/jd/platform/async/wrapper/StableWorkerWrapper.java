@@ -2,15 +2,8 @@ package com.jd.platform.async.wrapper;
 
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
-import com.jd.platform.async.exception.SkippedException;
-import com.jd.platform.async.executor.WrapperEndingInspector;
-import com.jd.platform.async.executor.timer.SystemClock;
-import com.jd.platform.async.worker.ResultState;
-import com.jd.platform.async.wrapper.actionstrategy.DependenceAction;
 
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 
 /**
  * {@link WorkerWrapper}默认实现类，将上下游Wrapper保存在自己的Set中。

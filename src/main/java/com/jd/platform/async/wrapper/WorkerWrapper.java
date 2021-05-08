@@ -4,7 +4,6 @@ import com.jd.platform.async.callback.DefaultCallback;
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.exception.SkippedException;
-import com.jd.platform.async.executor.WrapperEndingInspector;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.worker.*;
 import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
@@ -60,6 +59,10 @@ public abstract class WorkerWrapper<T, V> {
      * IDEA可以使用JOL Java Object Layout插件查看对象大小。
      */
     private final WrapperStrategy wrapperStrategy = new WrapperStrategy();
+    /**
+     * 超时检查，该值允许为null。表示不设置。
+     */
+    private volatile TimeOutProperties timeOutProperties;
 
     // *****   state属性的常量值   *****
 
@@ -121,13 +124,23 @@ public abstract class WorkerWrapper<T, V> {
     public abstract Set<WorkerWrapper<?, ?>> getNextWrappers();
 
     /**
-     * 总控制台超时，停止所有任务
+     * 使wrapper状态修改为超时失败。（但如果已经执行完成则不会修改）
+     * <p/>
+     * 本方法不会试图执行超时判定逻辑。
+     * 如果要执行超时逻辑判断，请用{@link TimeOutProperties#checkTimeOut(boolean)}并传入参数true。
      */
-    public void stopNow() {
-        if (getState() == INIT || getState() == WORKING) {
-            fastFail(getState(), null);
+    public void failNow() {
+        int state = getState();
+        if (state == INIT || state == WORKING) {
+            fastFail(state, null);
         }
     }
+
+    public WrapperStrategy getWrapperStrategy() {
+        return wrapperStrategy;
+    }
+
+    // ========== protected ==========
 
     /**
      * 快速失败
@@ -266,16 +279,16 @@ public abstract class WorkerWrapper<T, V> {
         // nextWrappers有多个
         try {
             inspector.addWrapper(nextWrappers);
-            nextWrappers.forEach(next -> {
-                executorService.submit(() -> next.work(executorService, this, nextRemainTIme, getForParamUseWrappers(), inspector));
-            });
+            nextWrappers.forEach(next -> executorService.submit(() ->
+                    next.work(executorService, this, nextRemainTIme, getForParamUseWrappers(), inspector))
+            );
         } finally {
             inspector.setWrapperEndWithTryPolling(this);
         }
     }
 
     /**
-     * 执行自己的job.具体的执行是在另一个线程里,但判断阻塞超时是在work线程
+     * 本工作线程执行自己的job.判断阻塞超时这里开始时会判断一次总超时时间，但在轮询线程会判断单个wrapper超时时间，并也会判断总超时时间。
      */
     protected void fire() {
         //阻塞取结果
@@ -288,9 +301,19 @@ public abstract class WorkerWrapper<T, V> {
             if (!compareAndSetState(INIT, WORKING)) {
                 return;
             }
-            callback.begin();
-            //执行耗时操作
-            V resultValue = resultValue = (V) worker.action(param, (Map) getForParamUseWrappers());
+            V resultValue;
+            try {
+                callback.begin();
+                if (timeOutProperties != null) {
+                    timeOutProperties.startWorking();
+                }
+                //执行耗时操作
+                resultValue = (V) worker.action(param, (Map) getForParamUseWrappers());
+            } finally {
+                if (timeOutProperties != null) {
+                    timeOutProperties.endWorking();
+                }
+            }
             //如果状态不是在working,说明别的地方已经修改了
             if (!compareAndSetState(WORKING, FINISH)) {
                 return;
@@ -386,29 +409,46 @@ public abstract class WorkerWrapper<T, V> {
 
     abstract void setDependWrappers(Set<WorkerWrapper<?, ?>> dependWrappers);
 
-    WrapperStrategy getWrapperStrategy() {
-        return wrapperStrategy;
+    TimeOutProperties getTimeOut() {
+        return timeOutProperties;
+    }
+
+    void setTimeOut(TimeOutProperties timeOutProperties) {
+        this.timeOutProperties = timeOutProperties;
     }
 
     // ========== toString ==========
 
     @Override
     public String toString() {
-        final StringBuilder sb = new StringBuilder(150)
+        final StringBuilder sb = new StringBuilder(200)
                 .append("WorkerWrapper{id=").append(id)
                 .append(", param=").append(param)
                 .append(", worker=").append(worker)
                 .append(", callback=").append(callback)
-                .append(", state=").append(state)
+                .append(", state=");
+        int state = this.state.get();
+        if (state == FINISH) {
+            sb.append("FINISH");
+        } else if (state == WORKING) {
+            sb.append("WORKING");
+        } else if (state == INIT) {
+            sb.append("INIT");
+        } else if (state == ERROR) {
+            sb.append("ERROR");
+        } else {
+            throw new IllegalStateException("unknown state : " + state);
+        }
+        sb
                 .append(", workResult=").append(workResult)
                 // 防止循环引用，这里只输出相关Wrapper的id
-                .append(", forParamUseWrappers::getId=");
+                .append(", forParamUseWrappers::getId=[");
         getForParamUseWrappers().keySet().forEach(wrapperId -> sb.append(wrapperId).append(", "));
         if (getForParamUseWrappers().keySet().size() > 0) {
             sb.delete(sb.length() - 2, sb.length());
         }
         sb
-                .append(", dependWrappers::getId=[");
+                .append("], dependWrappers::getId=[");
         getDependWrappers().stream().map(WorkerWrapper::getId).forEach(wrapperId -> sb.append(wrapperId).append(", "));
         if (getDependWrappers().size() > 0) {
             sb.delete(sb.length() - 2, sb.length());
@@ -422,6 +462,7 @@ public abstract class WorkerWrapper<T, V> {
         sb
                 .append("]")
                 .append(", wrapperStrategy=").append(getWrapperStrategy())
+                .append(", timeOutProperties=").append(getTimeOut())
                 .append('}');
         return sb.toString();
     }
@@ -510,7 +551,6 @@ public abstract class WorkerWrapper<T, V> {
 
         // ========== toString ==========
 
-
         @Override
         public String toString() {
             return "WrapperStrategy{" +
@@ -518,6 +558,162 @@ public abstract class WorkerWrapper<T, V> {
                     ", dependMustStrategyMapper=" + dependMustStrategyMapper +
                     ", dependenceStrategy=" + dependenceStrategy +
                     ", skipStrategy=" + skipStrategy +
+                    '}';
+        }
+    }
+
+    public static class TimeOutProperties {
+        private final boolean enable;
+        private final long time;
+        private final TimeUnit unit;
+        private final boolean allowInterrupt;
+        private final WorkerWrapper<?, ?> wrapper;
+
+        private final Object lock = new Object();
+
+        private volatile boolean started = false;
+        private volatile boolean ended = false;
+        private volatile long startWorkingTime;
+        private volatile long endWorkingTime;
+        private volatile Thread doWorkingThread;
+
+        public TimeOutProperties(boolean enable, long time, TimeUnit unit, boolean allowInterrupt, WorkerWrapper<?, ?> wrapper) {
+            this.enable = enable;
+            this.time = time;
+            this.unit = unit;
+            this.allowInterrupt = allowInterrupt;
+            this.wrapper = wrapper;
+        }
+
+        // ========== 工作线程调用 ==========
+
+        public void startWorking() {
+            synchronized (lock) {
+                started = true;
+                startWorkingTime = SystemClock.now();
+                doWorkingThread = Thread.currentThread();
+            }
+        }
+
+        public void endWorking() {
+            synchronized (lock) {
+                ended = true;
+                doWorkingThread = null;
+                endWorkingTime = SystemClock.now();
+            }
+        }
+
+        // ========== 轮询线程调用 ==========
+
+        /**
+         * 检查超时。
+         * 可以将boolean参数传入true以在超时的时候直接失败。
+         *
+         * @param withStop 如果为false，不会发生什么，仅仅是单纯的判断是否超时。
+         *                 如果为true，则会去快速失败wrapper{@link #failNow()}，有必要的话还会打断线程。
+         * @return 如果 超时 或 执行时间超过限制 返回true；未超时返回false。
+         */
+        public boolean checkTimeOut(boolean withStop) {
+            if (enable) {
+                synchronized (lock) {
+                    if (started) {
+                        // 判断执行中的wrapper是否超时
+                        long dif = (ended ? endWorkingTime : SystemClock.now()) - startWorkingTime;
+                        if (dif > unit.toMillis(time)) {
+                            if (withStop) {
+                                if (allowInterrupt) {
+                                    doWorkingThread.interrupt();
+                                }
+                                wrapper.failNow();
+                                ended = true;
+                            }
+                            return true;
+                        }
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // ========== package ==========
+
+        boolean isEnable() {
+            return enable;
+        }
+
+        long getTime() {
+            return time;
+        }
+
+        TimeUnit getUnit() {
+            return unit;
+        }
+
+        boolean isAllowInterrupt() {
+            return allowInterrupt;
+        }
+
+        Object getLock() {
+            return lock;
+        }
+
+        boolean isStarted() {
+            return started;
+        }
+
+        void setStarted(boolean started) {
+            this.started = started;
+        }
+
+        boolean isEnded() {
+            return ended;
+        }
+
+        void setEnded(boolean ended) {
+            this.ended = ended;
+        }
+
+        long getStartWorkingTime() {
+            return startWorkingTime;
+        }
+
+        void setStartWorkingTime(long startWorkingTime) {
+            this.startWorkingTime = startWorkingTime;
+        }
+
+        long getEndWorkingTime() {
+            return endWorkingTime;
+        }
+
+        void setEndWorkingTime(long endWorkingTime) {
+            this.endWorkingTime = endWorkingTime;
+        }
+
+        Thread getDoWorkingThread() {
+            return doWorkingThread;
+        }
+
+        void setDoWorkingThread(Thread doWorkingThread) {
+            this.doWorkingThread = doWorkingThread;
+        }
+
+
+        // ========== toString ==========
+
+        @Override
+        public String toString() {
+            return "TimeOutProperties{" +
+                    "enable=" + enable +
+                    ", time=" + time +
+                    ", unit=" + unit +
+                    ", allowInterrupt=" + allowInterrupt +
+                    ", wrapper::getId=" + wrapper.getId() +
+                    ", started=" + started +
+                    ", ended=" + ended +
+                    ", startWorkingTime=" + startWorkingTime +
+                    ", endWorkingTime=" + endWorkingTime +
+                    ", doWorkingThread=" + doWorkingThread +
                     '}';
         }
     }

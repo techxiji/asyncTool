@@ -5,10 +5,11 @@ import com.jd.platform.async.callback.DefaultGroupCallback;
 import com.jd.platform.async.callback.IGroupCallback;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.wrapper.WorkerWrapper;
+import com.jd.platform.async.wrapper.WrapperEndingInspector;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -28,15 +29,15 @@ public class Async {
      */
     public static boolean beginWork(long timeout,
                                     ExecutorService executorService,
-                                    Collection<? extends WorkerWrapper> workerWrappers)
-            throws ExecutionException, InterruptedException {
+                                    Collection<? extends WorkerWrapper<?,?>> workerWrappers)
+            throws InterruptedException {
         if (workerWrappers == null || workerWrappers.size() == 0) {
             return false;
         }
         //保存上次执行的线程池变量（为了兼容以前的旧功能）
         Async.lastExecutorService = Objects.requireNonNull(executorService, "ExecutorService is null ! ");
         //定义一个map，存放所有的wrapper，key为wrapper的唯一id，value是该wrapper，可以从value中获取wrapper的result
-        final ConcurrentMap<String, WorkerWrapper> forParamUseWrappers =
+        final ConcurrentMap<String, WorkerWrapper<?,?>> forParamUseWrappers =
                 new ConcurrentHashMap<>(Math.max(workerWrappers.size() * 3, 8));
         final WrapperEndingInspector inspector = new WrapperEndingInspector(SystemClock.now() + timeout);
         inspector.addWrapper(workerWrappers);
@@ -59,7 +60,7 @@ public class Async {
         if (workerWrapper == null || workerWrapper.length == 0) {
             return false;
         }
-        Set<WorkerWrapper> workerWrappers = Arrays.stream(workerWrapper).collect(Collectors.toSet());
+        Set workerWrappers = Arrays.stream(workerWrapper).collect(Collectors.toSet());
         return beginWork(timeout, executorService, workerWrappers);
     }
 
@@ -148,7 +149,7 @@ public class Async {
                             TimeUnit.SECONDS,
                             new LinkedBlockingQueue<>(),
                             new ThreadFactory() {
-                                private final AtomicInteger threadCount = new AtomicInteger(0);
+                                private final AtomicLong threadCount = new AtomicLong(0);
 
                                 @Override
                                 public Thread newThread(Runnable r) {

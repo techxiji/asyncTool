@@ -8,6 +8,7 @@ import com.jd.platform.async.wrapper.actionstrategy.DependenceStrategy;
 import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
 
 import java.util.Collection;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 作为优化编排依赖策略后，新增的Builder接口。
@@ -233,5 +234,57 @@ public interface WorkerWrapperBuilder<T, V> {
         return setNext().wrapper(wrappers).end();
     }
 
+    /**
+     * 设置超时时间的具体属性
+     */
+    SetTimeOut<T, V> setTimeOut();
+
+    interface SetTimeOut<T, V> {
+        /**
+         * 是否启动超时判断。
+         * <p>
+         * 默认为true
+         *
+         * @param enableElseDisable 是则true
+         */
+        SetTimeOut<T, V> enableTimeOut(boolean enableElseDisable);
+
+        /**
+         * 设置单个WorkerWrapper的超时时间。若不设置则不进行超时判断
+         *
+         * @param time 时间数值
+         * @param unit 时间单位
+         */
+        SetTimeOut<T, V> setTime(long time, TimeUnit unit);
+
+        /**
+         * 是否允许被试图中断线程
+         *
+         * @param allow 是则true
+         */
+        SetTimeOut<T, V> allowInterrupt(boolean allow);
+
+        WorkerWrapperBuilder<T, V> end();
+    }
+
+    /**
+     * 便携式设置单个WorkerWrapper的超时时间。若不设置则不进行超时判断
+     *
+     * @param time 时间数值
+     * @param unit 时间单位
+     */
+    default WorkerWrapperBuilder<T, V> timeout(long time, TimeUnit unit) {
+        return timeout(true, time, unit, false);
+    }
+
+    default WorkerWrapperBuilder<T, V> timeout(boolean enableTimeOut, long time, TimeUnit unit, boolean allowInterrupt) {
+        return setTimeOut().enableTimeOut(enableTimeOut).setTime(time, unit).allowInterrupt(allowInterrupt).end();
+    }
+
+    /**
+     * 构建Wrapper。
+     *
+     * @return 返回WorkerWrapper
+     */
     WorkerWrapper<T, V> build();
 }
