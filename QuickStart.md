@@ -54,7 +54,7 @@ public interface IWorker<T, V> {
      * @param object
      *         object
      */
-    V action(T object, Map<String, WorkerWrapper> allWrappers);
+    V dependAction(T object, Map<String, WorkerWrapper> allWrappers);
 
     /**
      * 超时、异常时，返回的默认值
@@ -113,7 +113,7 @@ wrapper的泛型和worker的一样，决定了入参和结果的类型。
 public class ParWorker1 implements IWorker<String, String>, ICallback<String, String> {
 
     @Override
-    public String action(String object) {
+    public String dependAction(String object) {
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {

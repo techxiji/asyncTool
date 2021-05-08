@@ -21,6 +21,8 @@ public interface ICallback<T, V> {
 
     /**
      * 耗时操作执行完毕后，就给value注入值
+     * <p/>
+     * 只要Wrapper被调用后成功或失败/超时，该方法都会被执行。
      */
     void result(boolean success, T param, WorkResult<V> workResult);
 }
