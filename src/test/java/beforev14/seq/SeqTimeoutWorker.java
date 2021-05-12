@@ -15,7 +15,7 @@ import java.util.Map;
 class SeqTimeoutWorker implements IWorker<String, String>, ICallback<String, String> {
 
     @Override
-    public String action(String object, Map<String, WorkerWrapper> allWrappers) {
+    public String action(String object, Map<String, WorkerWrapper<?,?>> allWrappers) {
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {

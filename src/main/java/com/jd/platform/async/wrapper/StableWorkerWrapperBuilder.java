@@ -3,8 +3,11 @@ package com.jd.platform.async.wrapper;
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.worker.WorkResult;
-import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
-import com.jd.platform.async.wrapper.actionstrategy.*;
+import com.jd.platform.async.wrapper.strategy.depend.DependMustStrategyMapper;
+import com.jd.platform.async.wrapper.strategy.depend.DependWrapperActionStrategy;
+import com.jd.platform.async.wrapper.strategy.depend.DependWrapperStrategyMapper;
+import com.jd.platform.async.wrapper.strategy.depend.DependenceStrategy;
+import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -93,6 +96,9 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
     private boolean enableTimeOut = false;
     private long time = -1;
     private TimeUnit unit = null;
+    /**
+     * 是否允许被打断
+     */
     private boolean allowInterrupt = false;
 
     /**
@@ -259,16 +265,10 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
         @Override
         public SetTimeOutImpl setTime(long time, TimeUnit unit) {
             if (time <= 0 || unit == null) {
-                throw new IllegalStateException("Illegal argument : time=" + time + " must > 0, unit=" + unit + " must not null");
+                throw new IllegalStateException("Illegal argument : time=" + time + " must > 0, unit=" + unit + " require not null");
             }
             StableWorkerWrapperBuilder.this.time = time;
             StableWorkerWrapperBuilder.this.unit = unit;
-            return this;
-        }
-
-        @Override
-        public SetTimeOutImpl allowInterrupt(boolean allow) {
-            StableWorkerWrapperBuilder.this.allowInterrupt = allow;
             return this;
         }
 
@@ -279,13 +279,34 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
     }
 
     @Override
+    public WorkerWrapperBuilder<T, V> allowInterrupt(boolean allow) {
+        allowInterrupt = allow;
+        return returnThisBuilder();
+    }
+
+    @Override
     public WorkerWrapper<T, V> build() {
         isBuilding = true;
+        // ========== 设置单wrapper超时检查 ==========
+        {
+            if (enableTimeOut) {
+                if (time <= 0) {
+                    throw new IllegalArgumentException("timeout time " + time + " must > 0");
+                }
+                if (unit == null) {
+                    throw new IllegalArgumentException(new NullPointerException("timeout unit require not null"));
+                }
+            }
+        }
+        // ========== 构造wrapper ==========
         WorkerWrapper<T, V> wrapper = new StableWorkerWrapper<>(
                 id == null ? UUID.randomUUID().toString() : id,
                 worker,
-                param,
-                callback
+                callback,
+                allowInterrupt,
+                enableTimeOut,
+                time,
+                unit
         );
         wrapper.setDependWrappers(new LinkedHashSet<>());
         wrapper.setNextWrappers(new LinkedHashSet<>());
@@ -329,8 +350,14 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
                         .ifPresent(mustMapper -> mustMapper.addDependMust(wrapper)));
             }
             if (selfIsSpecialMap != null && selfIsSpecialMap.size() > 0) {
-                selfIsSpecialMap.forEach((next, strategy) -> Optional.ofNullable(next.getWrapperStrategy().getDependWrapperStrategyMapper())
-                        .ifPresent(wrapperMapper -> wrapperMapper.putMapping(wrapper, strategy)));
+                selfIsSpecialMap.forEach((next, strategy) -> {
+                    DependWrapperStrategyMapper dependWrapperStrategyMapper = next.getWrapperStrategy().getDependWrapperStrategyMapper();
+                    if (dependWrapperStrategyMapper == null) {
+                        next.getWrapperStrategy().setDependWrapperStrategyMapper(
+                                dependWrapperStrategyMapper = new DependWrapperStrategyMapper());
+                    }
+                    dependWrapperStrategyMapper.putMapping(wrapper, strategy);
+                });
             }
         }
         // ========== 设置检查是否跳过策略 ==========
@@ -344,18 +371,9 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
                 wrapper.getWrapperStrategy().setSkipStrategy(skipStrategy);
             }
         }
-        // ========== 设置单wrapper超时检查 ==========
-        {
-            if (enableTimeOut) {
-                if (time <= 0) {
-                    throw new IllegalStateException("timeout time " + time + " must > " + 0);
-                }
-                if (unit == null) {
-                    throw new IllegalStateException("timeout unit must not null");
-                }
-                wrapper.setTimeOut(new WorkerWrapper.TimeOutProperties(true, time, unit, allowInterrupt, wrapper));
-            }
-        }
+        // ========== end ==========
+        wrapper.state.set(WorkerWrapper.State.INIT.id);
+        wrapper.setParam(param);
         return wrapper;
     }
 

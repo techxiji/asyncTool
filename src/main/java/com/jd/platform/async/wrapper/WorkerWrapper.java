@@ -4,17 +4,23 @@ import com.jd.platform.async.callback.DefaultCallback;
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.exception.SkippedException;
+import com.jd.platform.async.executor.PollingCenter;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.worker.*;
-import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
-import com.jd.platform.async.wrapper.actionstrategy.DependMustStrategyMapper;
-import com.jd.platform.async.wrapper.actionstrategy.DependWrapperStrategyMapper;
-import com.jd.platform.async.wrapper.actionstrategy.DependenceAction;
-import com.jd.platform.async.wrapper.actionstrategy.DependenceStrategy;
+import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
+import com.jd.platform.async.wrapper.strategy.depend.DependMustStrategyMapper;
+import com.jd.platform.async.wrapper.strategy.depend.DependWrapperStrategyMapper;
+import com.jd.platform.async.wrapper.strategy.depend.DependenceAction;
+import com.jd.platform.async.wrapper.strategy.depend.DependenceStrategy;
 
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+
+import static com.jd.platform.async.wrapper.WorkerWrapper.State.*;
 
 /**
  * 对每个worker及callback进行包装，一对一
@@ -24,116 +30,178 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author wuweifeng wrote on 2019-11-19.
  */
 public abstract class WorkerWrapper<T, V> {
+    // ========== 固定属性 ==========
+
     /**
      * 该wrapper的唯一标识
      */
     protected final String id;
-    /**
-     * worker将来要处理的param
-     */
-    protected T param;
-    protected IWorker<T, V> worker;
-    protected ICallback<T, V> callback;
-    /**
-     * 标记该事件是否已经被处理过了，譬如已经超时返回false了，后续rpc又收到返回值了，则不再二次回调
-     * 经试验,volatile并不能保证"同一毫秒"内,多线程对该值的修改和拉取
-     * <p>
-     * 1-finish, 2-error, 3-working
-     */
-    protected final AtomicInteger state = new AtomicInteger(0);
-    /**
-     * 也是个钩子变量，用来存临时的结果
-     */
-    protected volatile WorkResult<V> workResult = WorkResult.defaultResult();
-    /**
-     * 该map存放所有wrapper的id和wrapper映射
-     * <p/>
-     * 需要线程安全。
-     */
-    private Map<String, WorkerWrapper<?, ?>> forParamUseWrappers;
+    protected final IWorker<T, V> worker;
+    protected final ICallback<T, V> callback;
     /**
      * 各种策略的封装类。
-     * <p/>
-     * 其实是因为加功能太多导致这个对象大小超过了128Byte，所以强迫症的我不得不把几个字段丢到策略类里面去。
-     * ps: 大小超过128Byte令我(TcSnZh)难受的一比，就像走在草坪的格子上，一步嫌小、两步扯蛋。
-     * IDEA可以使用JOL Java Object Layout插件查看对象大小。
      */
     private final WrapperStrategy wrapperStrategy = new WrapperStrategy();
     /**
-     * 超时检查，该值允许为null。表示不设置。
+     * 是否允许被打断
      */
-    private volatile TimeOutProperties timeOutProperties;
+    protected final boolean allowInterrupt;
+    /**
+     * 是否启动超时检查
+     */
+    final boolean enableTimeout;
+    /**
+     * 超时时间长度
+     */
+    final long timeoutLength;
+    /**
+     * 超时时间单位
+     */
+    final TimeUnit timeoutUnit;
 
-    // *****   state属性的常量值   *****
+    // ========== 临时属性 ==========
 
-    public static final int FINISH = 1;
-    public static final int ERROR = 2;
-    public static final int WORKING = 3;
-    public static final int INIT = 0;
+    /**
+     * worker将来要处理的param
+     */
+    protected volatile T param;
+    /**
+     * 原子设置wrapper的状态
+     * <p>
+     * {@link State}此枚举类枚举了state值所代表的状态枚举。
+     */
+    protected final AtomicInteger state = new AtomicInteger(BUILDING.id);
+    /**
+     * 该值将在{@link IWorker#action(Object, Map)}进行时设为当前线程，在任务开始前或结束后都为null。
+     */
+    protected final AtomicReference<Thread> doWorkingThread = new AtomicReference<>();
+    /**
+     * 也是个钩子变量，用来存临时的结果
+     */
+    protected final AtomicReference<WorkResult<V>> workResult = new AtomicReference<>(null);
 
-    WorkerWrapper(String id, IWorker<T, V> worker, T param, ICallback<T, V> callback) {
+
+    WorkerWrapper(String id,
+                  IWorker<T, V> worker,
+                  ICallback<T, V> callback,
+                  boolean allowInterrupt,
+                  boolean enableTimeout,
+                  long timeoutLength,
+                  TimeUnit timeoutUnit
+    ) {
         if (worker == null) {
             throw new NullPointerException("async.worker is null");
         }
         this.worker = worker;
-        this.param = param;
         this.id = id;
         //允许不设置回调
         if (callback == null) {
             callback = new DefaultCallback<>();
         }
         this.callback = callback;
+        this.allowInterrupt = allowInterrupt;
+        this.enableTimeout = enableTimeout;
+        this.timeoutLength = timeoutLength;
+        this.timeoutUnit = timeoutUnit;
+
     }
 
     // ========== public ==========
 
     /**
-     * 外部调用本线程运行此Wrapper的入口方法。
+     * 外部调用本线程运行此wrapper的入口方法。
+     * 该方法将会确定这组wrapper所属的group。
      *
-     * @param executorService     该ExecutorService将成功运行后，在nextWrapper有多个时被使用于多线程调用。
-     * @param remainTime          剩下的时间
-     * @param forParamUseWrappers 用于保存经过的wrapper的信息的Map，key为id。
-     * @param inspector           wrapper调度检查器
+     * @param executorService 该ExecutorService将成功运行后，在nextWrapper有多个时被使用于多线程调用。
+     * @param remainTime      剩下的时间
+     * @param group           wrapper组
+     * @throws IllegalStateException 当wrapper正在building状态时被启动，则会抛出该异常。
      */
     public void work(ExecutorService executorService,
                      long remainTime,
-                     Map<String, WorkerWrapper<?, ?>> forParamUseWrappers,
-                     WrapperEndingInspector inspector) {
-        work(executorService, null, remainTime, forParamUseWrappers, inspector);
+                     WorkerWrapperGroup group) {
+        work(executorService, null, remainTime, group);
     }
 
     public String getId() {
         return id;
     }
 
+    /**
+     * 返回{@link #workResult}的值。
+     * 若调用此方法时workResult还未设置，将会返回{@link WorkResult#defaultResult()}。
+     */
     public WorkResult<V> getWorkResult() {
-        return workResult;
+        WorkResult<V> res = workResult.get();
+        return res == null ? WorkResult.defaultResult() : res;
     }
 
     public void setParam(T param) {
         this.param = param;
     }
 
-    public int getState() {
-        return state.get();
+    public State getState() {
+        return State.of(state.get());
     }
 
     /**
-     * 获取之后的下游Wrapper
+     * 获取下游Wrapper
      */
     public abstract Set<WorkerWrapper<?, ?>> getNextWrappers();
 
     /**
-     * 使wrapper状态修改为超时失败。（但如果已经执行完成则不会修改）
-     * <p/>
-     * 本方法不会试图执行超时判定逻辑。
-     * 如果要执行超时逻辑判断，请用{@link TimeOutProperties#checkTimeOut(boolean)}并传入参数true。
+     * 获取上游wrapper
      */
-    public void failNow() {
-        int state = getState();
-        if (state == INIT || state == WORKING) {
-            fastFail(state, null);
-        }
+    public abstract Set<WorkerWrapper<?, ?>> getDependWrappers();
+
+    /**
+     * 获取本wrapper的超时情况。如有必要还会修改wrapper状态。
+     *
+     * @param withEndIt       如果为true，在检查出已经超时的时候，会将其快速结束。
+     * @param startTime       起始时间
+     * @param totalTimeLength 总任务时长
+     * @return 超时返回-1L，结束但未超时返回0L，尚未结束且未超时返回与deadline的差值
+     * <p>
+     * 当没有超时，若该wrapper已经结束但没有超时，返回 0L 。
+     * <p>
+     * 如果该wrapper单独了设置超时策略并正在运行，返回距离超时策略限时相差的毫秒值。
+     * 例如设置10ms超时，此时已经开始3ms，则返回 7L。
+     * 如果此差值<1，则返回 1L。
+     * <p>
+     * 如果已经超时，则返回 -1L。
+     * </p>
+     */
+    public long checkTimeout(boolean withEndIt, long startTime, long totalTimeLength) {
+        do {
+            WorkResult<V> _workResult = workResult.get();
+            // 如果已经有结果了，就根据结果值判断
+            if (_workResult != null) {
+                return _workResult.getResultState() == ResultState.TIMEOUT ? -1L : 0L;
+            }
+            // 如果还没有出结果
+            // 判断是否超时
+            long now = SystemClock.now();
+            if (totalTimeLength < now - startTime
+                    || enableTimeout && timeoutUnit.toMillis(timeoutLength) < now - startTime) {
+                // 如果需要处理该wrapper的状态
+                if (withEndIt) {
+                    // CAS一个超时的结果
+                    if (!workResult.compareAndSet(
+                            null,
+                            new WorkResult<>(null, ResultState.TIMEOUT, null))
+                    ) {
+                        // 就在想CAS的时候，出结果了，就采用新的结果重新判断一次
+                        continue;
+                    }
+                    fastFail(true, null);
+                }
+                return -1L;
+            }
+            // 正在运行，尚未超时
+            else {
+                return Math.max(1, startTime + totalTimeLength - now);
+            }
+        } while (true);
     }
 
     public WrapperStrategy getWrapperStrategy() {
@@ -143,193 +211,225 @@ public abstract class WorkerWrapper<T, V> {
     // ========== protected ==========
 
     /**
-     * 快速失败
-     *
-     * @return 已经失败则返回false，如果刚才设置为失败了则返回true。
-     */
-    protected boolean fastFail(int expect, Exception e) {
-        //试图将它从expect状态,改成Error
-        if (!compareAndSetState(expect, ERROR)) {
-            return false;
-        }
-
-        //尚未处理过结果
-        if (checkIsNullResult()) {
-            if (e == null) {
-                workResult.setResultState(ResultState.TIMEOUT);
-            } else {
-                workResult.setResultState(ResultState.EXCEPTION);
-                workResult.setEx(e);
-            }
-            workResult.setResult(worker.defaultValue());
-        }
-        callback.result(false, param, workResult);
-        return true;
-    }
-
-    /**
-     * 判断{@link #state}状态是否是初始值。
-     */
-    protected boolean checkIsNullResult() {
-        return ResultState.DEFAULT == workResult.getResultState();
-    }
-
-    protected boolean compareAndSetState(int expect, int update) {
-        return this.state.compareAndSet(expect, update);
-    }
-
-    /**
      * 工作的核心方法。
      *
      * @param fromWrapper 代表这次work是由哪个上游wrapper发起的。如果是首个Wrapper则为null。
      * @param remainTime  剩余时间。
+     * @throws IllegalStateException 当wrapper正在building状态时被启动，则会抛出该异常。
      */
     protected void work(ExecutorService executorService,
                         WorkerWrapper<?, ?> fromWrapper,
                         long remainTime,
-                        Map<String, WorkerWrapper<?, ?>> forParamUseWrappers,
-                        WrapperEndingInspector inspector) {
-        this.setForParamUseWrappers(forParamUseWrappers);
-        //将自己放到所有wrapper的集合里去
-        forParamUseWrappers.put(id, this);
+                        WorkerWrapperGroup group
+    ) {
         long now = SystemClock.now();
-        //总的已经超时了，就快速失败，进行下一个
-        if (remainTime <= 0) {
-            fastFail(INIT, null);
-            beginNext(executorService, now, remainTime, inspector);
-            return;
-        }
-        //如果自己已经执行过了。
-        //可能有多个依赖，其中的一个依赖已经执行完了，并且自己也已开始执行或执行完毕。当另一个依赖执行完毕，又进来该方法时，就不重复处理了
-        if (getState() == FINISH || getState() == ERROR) {
-            beginNext(executorService, now, remainTime, inspector);
-            return;
-        }
-
-        // 判断是否要跳过自己，该方法可能会跳过正在工作的自己。
-        final WrapperStrategy wrapperStrategy = getWrapperStrategy();
-        if (wrapperStrategy.shouldSkip(getNextWrappers(), this, fromWrapper)) {
-            fastFail(INIT, new SkippedException());
-            beginNext(executorService, now, remainTime, inspector);
-            return;
-        }
-
-        //如果没有任何依赖，说明自己就是第一批要执行的
-        final Set<WorkerWrapper<?, ?>> dependWrappers = getDependWrappers();
-        if (dependWrappers == null || dependWrappers.size() == 0) {
-            fire();
-            beginNext(executorService, now, remainTime, inspector);
-            return;
-        }
-
-        DependenceAction.WithProperty judge = wrapperStrategy.judgeAction(dependWrappers, this, fromWrapper);
-
-        switch (judge.getDependenceAction()) {
-            case TAKE_REST:
-                inspector.reduceWrapper(this);
-                return;
-            case FAST_FAIL:
-                switch (judge.getResultState()) {
-                    case TIMEOUT:
-                        fastFail(INIT, null);
-                        break;
-                    case EXCEPTION:
-                        fastFail(INIT, judge.getFastFailException());
-                        break;
-                    default:
-                        fastFail(INIT, new RuntimeException("ResultState " + judge.getResultState() + " set to FAST_FAIL"));
-                        break;
+        // ================================================
+        // 以下是一些lambda。
+        // 因为抽取成方法反而不好传参、污染类方法，所以就这么干了
+        final Consumer<Boolean> __function__callbackResult =
+                success -> {
+                    try {
+                        callback.result(success, param, getWorkResult());
+                    } catch (Exception e) {
+                        if (State.setState(state, states_of_skipOrAfterWork, ERROR, null)) {
+                            fastFail(false, e);
+                        }
+                    }
+                };
+        final Runnable __function__callbackResult_beginNext =
+                () -> {
+                    __function__callbackResult.accept(false);
+                    beginNext(executorService, now, remainTime, group);
+                };
+        final BiConsumer<Boolean, Exception> __function__fastFail_callbackResult_beginNext =
+                (fastFail_isTimeout, fastFail_exception) -> {
+                    fastFail(fastFail_isTimeout, fastFail_exception);
+                    __function__callbackResult_beginNext.run();
+                };
+        final Runnable __function__doWork =
+                () -> {
+                    if (State.setState(state, STARTED, WORKING)) {
+                        try {
+                            fire(group);
+                        } catch (Exception e) {
+                            if (State.setState(state, WORKING, ERROR)) {
+                                __function__fastFail_callbackResult_beginNext.accept(false, e);
+                            }
+                            return;
+                        }
+                    }
+                    if (State.setState(state, WORKING, AFTER_WORK)) {
+                        __function__callbackResult.accept(true);
+                        beginNext(executorService, now, remainTime, group);
+                    }
+                };
+        // ================================================
+        // 开始执行
+        try {
+            if (State.isState(state, BUILDING)) {
+                throw new IllegalStateException("wrapper can't work because state is BUILDING ! wrapper is " + this);
+            }
+            //总的已经超时了，就快速失败，进行下一个
+            if (remainTime <= 0) {
+                if (State.setState(state, states_of_checkTimeoutAllowStates, ERROR, null)) {
+                    __function__fastFail_callbackResult_beginNext.accept(true, null);
                 }
-                beginNext(executorService, now, remainTime, inspector);
-                break;
-            case START_WORK:
-                fire();
-                beginNext(executorService, now, remainTime, inspector);
-                break;
-            case JUDGE_BY_AFTER:
-            default:
-                inspector.reduceWrapper(this);
-                throw new IllegalStateException("策略配置错误，不应当在WorkerWrapper中返回JUDGE_BY_AFTER或其他无效值 : this=" + this + ",fromWrapper=" + fromWrapper);
+                return;
+            }
+            //如果自己已经执行过了。
+            //可能有多个依赖，其中的一个依赖已经执行完了，并且自己也已开始执行或执行完毕。当另一个依赖执行完毕，又进来该方法时，就不重复处理了
+            final AtomicReference<State> oldStateRef = new AtomicReference<>(null);
+            if (!State.setState(state, states_of_notWorked, STARTED, oldStateRef::set)) {
+                return;
+            }
+            // 如果wrapper是第一次，要调用callback.begin
+            if (oldStateRef.get() == INIT) {
+                try {
+                    callback.begin();
+                } catch (Exception e) {
+                    // callback.begin 发生异常
+                    if (State.setState(state, states_of_checkTimeoutAllowStates, ERROR, null)) {
+                        __function__fastFail_callbackResult_beginNext.accept(false, e);
+                    }
+                    return;
+                }
+            }
+
+            //如果fromWrapper为null，说明自己就是第一批要执行的
+            if (fromWrapper == null) {
+                // 首当其冲，开始工作
+                __function__doWork.run();
+                return;
+            }
+
+            // 每个线程都需要判断是否要跳过自己，该方法可能会跳过正在工作的自己。
+            final WrapperStrategy wrapperStrategy = getWrapperStrategy();
+            if (wrapperStrategy.shouldSkip(getNextWrappers(), this, fromWrapper)) {
+                if (State.setState(state, STARTED, SKIP)) {
+                    __function__fastFail_callbackResult_beginNext.accept(false, new SkippedException());
+                }
+                return;
+            }
+
+            // 如果是由其他wrapper调用而运行至此，则使用策略器决定自己的行为
+            DependenceAction.WithProperty judge = wrapperStrategy.judgeAction(getDependWrappers(), this, fromWrapper);
+            switch (judge.getDependenceAction()) {
+                case TAKE_REST:
+                    return;
+                case FAST_FAIL:
+                    if (State.setState(state, STARTED, ERROR)) {
+                        //  根据FAST_FAIL.fastFailException()设置的属性值来设置fastFail方法的参数
+                        ResultState resultState = judge.getResultState();
+                        __function__fastFail_callbackResult_beginNext.accept(
+                                resultState == ResultState.TIMEOUT,
+                                judge.getFastFailException()
+                        );
+                    }
+                    return;
+                case START_WORK:
+                    __function__doWork.run();
+                    return;
+                case JUDGE_BY_AFTER:
+                default:
+                    throw new Error("策略配置错误，不应当在WorkerWrapper中返回JUDGE_BY_AFTER或其他无效值 : this=" + this + ",fromWrapper=" + fromWrapper);
+            }
+        } catch (Exception e) {
+            // wrapper本身抛出了不该有的异常
+            State.setState(state, states_all, ERROR, null);
+            NotExpectedException ex = new NotExpectedException(e, this);
+            workResult.set(new WorkResult<>(null, ResultState.EXCEPTION, ex));
+            __function__fastFail_callbackResult_beginNext.accept(false, ex);
         }
+    }
+
+
+    /**
+     * 本工作线程执行自己的job.
+     * <p/>
+     * 本方法不负责校验状态。请在调用前自行检验
+     */
+    protected void fire(WorkerWrapperGroup group) {
+        try {
+            doWorkingThread.set(Thread.currentThread());
+            //执行耗时操作
+            V result = worker.action(param, group.getForParamUseWrappers());
+            workResult.compareAndSet(
+                    null,
+                    new WorkResult<>(result, ResultState.SUCCESS)
+            );
+        } finally {
+            doWorkingThread.set(null);
+        }
+
+    }
+
+    /**
+     * 快速失败。
+     * 该方法不负责检查状态，请自行控制。
+     *
+     * @param timeout 是否是因为超时而快速失败
+     * @param e       设置异常信息到{@link WorkResult#getEx()}
+     */
+    protected void fastFail(boolean timeout, Exception e) {
+        // 试图打断正在执行{@link IWorker#action(Object, Map)}的线程
+        Thread _doWorkingThread;
+        if ((_doWorkingThread = doWorkingThread.get()) != null
+                // 不会打断自己
+                && !Objects.equals(Thread.currentThread(), _doWorkingThread)) {
+            _doWorkingThread.interrupt();
+        }
+        // 尚未处理过结果则设置
+        workResult.compareAndSet(null, new WorkResult<>(
+                worker.defaultValue(),
+                timeout ? ResultState.TIMEOUT : ResultState.EXCEPTION,
+                e
+        ));
     }
 
     /**
      * 进行下一个任务
+     * <p/>
+     * 本方法不负责校验状态。请在调用前自行检验
      */
-    protected void beginNext(ExecutorService executorService, long now, long remainTime, WrapperEndingInspector inspector) {
+    protected void beginNext(ExecutorService executorService, long now, long remainTime, WorkerWrapperGroup group) {
         //花费的时间
         final long costTime = SystemClock.now() - now;
         final long nextRemainTIme = remainTime - costTime;
         Set<WorkerWrapper<?, ?>> nextWrappers = getNextWrappers();
         if (nextWrappers == null) {
-            inspector.setWrapperEndWithTryPolling(this);
+            PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
             return;
         }
         // nextWrappers只有一个，就用本线程继续跑。
         if (nextWrappers.size() == 1) {
+            WorkerWrapper<?, ?> next = null;
             try {
-                WorkerWrapper<?, ?> next = nextWrappers.stream().findFirst().get();
-                inspector.addWrapper(next);
-                next.work(executorService, WorkerWrapper.this, nextRemainTIme, getForParamUseWrappers(), inspector);
+                next = nextWrappers.stream().findFirst().get();
+                group.addWrapper(next);
+                State.setState(state, AFTER_WORK, SUCCESS);
             } finally {
-                inspector.setWrapperEndWithTryPolling(this);
+                PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
+                if (next != null) {
+                    next.work(executorService, this, nextRemainTIme, group);
+                }
             }
-            return;
         }
         // nextWrappers有多个
-        try {
-            inspector.addWrapper(nextWrappers);
-            nextWrappers.forEach(next -> executorService.submit(() ->
-                    next.work(executorService, this, nextRemainTIme, getForParamUseWrappers(), inspector))
-            );
-        } finally {
-            inspector.setWrapperEndWithTryPolling(this);
+        else {
+            try {
+                group.addWrapper(nextWrappers);
+                nextWrappers.forEach(next -> executorService.submit(() ->
+                        next.work(executorService, this, nextRemainTIme, group))
+                );
+                State.setState(state, AFTER_WORK, SUCCESS);
+            } finally {
+                PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
+            }
         }
+
     }
 
-    /**
-     * 本工作线程执行自己的job.判断阻塞超时这里开始时会判断一次总超时时间，但在轮询线程会判断单个wrapper超时时间，并也会判断总超时时间。
-     */
-    protected void fire() {
-        //阻塞取结果
-        //避免重复执行
-        if (!checkIsNullResult()) {
-            return;
-        }
-        try {
-            //如果已经不是init状态了，说明正在被执行或已执行完毕。这一步很重要，可以保证任务不被重复执行
-            if (!compareAndSetState(INIT, WORKING)) {
-                return;
-            }
-            V resultValue;
-            try {
-                callback.begin();
-                if (timeOutProperties != null) {
-                    timeOutProperties.startWorking();
-                }
-                //执行耗时操作
-                resultValue = (V) worker.action(param, (Map) getForParamUseWrappers());
-            } finally {
-                if (timeOutProperties != null) {
-                    timeOutProperties.endWorking();
-                }
-            }
-            //如果状态不是在working,说明别的地方已经修改了
-            if (!compareAndSetState(WORKING, FINISH)) {
-                return;
-            }
-            workResult.setResultState(ResultState.SUCCESS);
-            workResult.setResult(resultValue);
-            //回调成功
-            callback.result(true, param, workResult);
-        } catch (Exception e) {
-            //避免重复回调
-            if (!checkIsNullResult()) {
-                return;
-            }
-            fastFail(WORKING, e);
-        }
-    }
+    // ========== private ==========
 
     // ========== hashcode and equals ==========
 
@@ -347,7 +447,7 @@ public abstract class WorkerWrapper<T, V> {
         return id.hashCode();
     }
 
-    // ========== Builder ==========
+    // ========== builder ==========
 
     public static <T, V> WorkerWrapperBuilder<T, V> builder() {
         return new Builder<>();
@@ -365,111 +465,51 @@ public abstract class WorkerWrapper<T, V> {
         }
     }
 
-    // ========== package access methods , for example , some getter/setter that doesn't want to be public ==========
-
-    T getParam() {
-        return param;
-    }
-
-    IWorker<T, V> getWorker() {
-        return worker;
-    }
-
-    void setWorker(IWorker<T, V> worker) {
-        this.worker = worker;
-    }
-
-    ICallback<T, V> getCallback() {
-        return callback;
-    }
-
-    void setCallback(ICallback<T, V> callback) {
-        this.callback = callback;
-    }
-
-    void setState(int state) {
-        this.state.set(state);
-    }
-
-    Map<String, WorkerWrapper<?, ?>> getForParamUseWrappers() {
-        return forParamUseWrappers;
-    }
-
-    void setForParamUseWrappers(Map<String, WorkerWrapper<?, ?>> forParamUseWrappers) {
-        this.forParamUseWrappers = forParamUseWrappers;
-    }
-
-    void setWorkResult(WorkResult<V> workResult) {
-        this.workResult = workResult;
-    }
+    // ========== package access methods ==========
 
     abstract void setNextWrappers(Set<WorkerWrapper<?, ?>> nextWrappers);
 
-    abstract Set<WorkerWrapper<?, ?>> getDependWrappers();
-
     abstract void setDependWrappers(Set<WorkerWrapper<?, ?>> dependWrappers);
-
-    TimeOutProperties getTimeOut() {
-        return timeOutProperties;
-    }
-
-    void setTimeOut(TimeOutProperties timeOutProperties) {
-        this.timeOutProperties = timeOutProperties;
-    }
 
     // ========== toString ==========
 
     @Override
     public String toString() {
-        final StringBuilder sb = new StringBuilder(200)
+        final StringBuilder sb = new StringBuilder(400)
                 .append("WorkerWrapper{id=").append(id)
+                .append(", state=").append(State.of(state.get()))
                 .append(", param=").append(param)
-                .append(", worker=").append(worker)
-                .append(", callback=").append(callback)
-                .append(", state=");
-        int state = this.state.get();
-        if (state == FINISH) {
-            sb.append("FINISH");
-        } else if (state == WORKING) {
-            sb.append("WORKING");
-        } else if (state == INIT) {
-            sb.append("INIT");
-        } else if (state == ERROR) {
-            sb.append("ERROR");
-        } else {
-            throw new IllegalStateException("unknown state : " + state);
-        }
-        sb
                 .append(", workResult=").append(workResult)
+                .append(", allowInterrupt=").append(allowInterrupt)
+                .append(", enableTimeout=").append(enableTimeout)
+                .append(", timeoutLength=").append(timeoutLength)
+                .append(", timeoutUnit=").append(timeoutUnit)
                 // 防止循环引用，这里只输出相关Wrapper的id
-                .append(", forParamUseWrappers::getId=[");
-        getForParamUseWrappers().keySet().forEach(wrapperId -> sb.append(wrapperId).append(", "));
-        if (getForParamUseWrappers().keySet().size() > 0) {
-            sb.delete(sb.length() - 2, sb.length());
-        }
-        sb
-                .append("], dependWrappers::getId=[");
-        getDependWrappers().stream().map(WorkerWrapper::getId).forEach(wrapperId -> sb.append(wrapperId).append(", "));
-        if (getDependWrappers().size() > 0) {
+                .append(", dependWrappers::getId=[");
+        final Set<WorkerWrapper<?, ?>> dependWrappers = getDependWrappers();
+        dependWrappers.stream().map(WorkerWrapper::getId).forEach(wrapperId -> sb.append(wrapperId).append(", "));
+        if (dependWrappers.size() > 0) {
             sb.delete(sb.length() - 2, sb.length());
         }
         sb
                 .append("], nextWrappers::getId=[");
-        getNextWrappers().stream().map(WorkerWrapper::getId).forEach(wrapperId -> sb.append(wrapperId).append(", "));
-        if (getNextWrappers().size() > 0) {
+        final Set<WorkerWrapper<?, ?>> nextWrappers = getNextWrappers();
+        nextWrappers.stream().map(WorkerWrapper::getId).forEach(wrapperId -> sb.append(wrapperId).append(", "));
+        if (nextWrappers.size() > 0) {
             sb.delete(sb.length() - 2, sb.length());
         }
         sb
-                .append("]")
-                .append(", wrapperStrategy=").append(getWrapperStrategy())
-                .append(", timeOutProperties=").append(getTimeOut())
+                .append("], doWorkingThread=").append(doWorkingThread.get())
+                .append(", worker=").append(worker)
+                .append(", callback=").append(callback)
+                .append(", wrapperStrategy=").append(wrapperStrategy)
                 .append('}');
         return sb.toString();
     }
 
     public static class WrapperStrategy implements DependenceStrategy, SkipStrategy {
 
-        // ========== 这三个属性用来判断是否要开始工作 ==========
+        // ========== 这三个策略器用于链式判断是否要开始工作 ==========
 
         // 从前往后依次判断的顺序为 dependWrapperStrategyMapper -> dependMustStrategyMapper -> dependenceStrategy
 
@@ -486,7 +526,7 @@ public abstract class WorkerWrapper<T, V> {
          */
         private DependMustStrategyMapper dependMustStrategyMapper;
         /**
-         * 依赖响应全局策略。
+         * 底层全局策略。
          */
         private DependenceStrategy dependenceStrategy;
 
@@ -562,159 +602,184 @@ public abstract class WorkerWrapper<T, V> {
         }
     }
 
-    public static class TimeOutProperties {
-        private final boolean enable;
-        private final long time;
-        private final TimeUnit unit;
-        private final boolean allowInterrupt;
-        private final WorkerWrapper<?, ?> wrapper;
+    /**
+     * state状态枚举工具类
+     */
+    public enum State {
+        /**
+         * 初始化中，builder正在设置其数值
+         */
+        BUILDING(-1),
+        /**
+         * 初始化完成，但是还未执行过。
+         */
+        INIT(0),
+        /**
+         * 执行过。
+         * 即至少进行了一次各种判定，例如判断 是否跳过/是否启动工作
+         */
+        STARTED(1),
+        /**
+         * 工作状态
+         */
+        WORKING(2),
+        /**
+         * 工作完成后的收尾工作，例如调用下游wrapper
+         */
+        AFTER_WORK(3),
+        /**
+         * wrapper成功执行结束
+         */
+        SUCCESS(4),
+        /**
+         * wrapper失败了
+         */
+        ERROR(5),
+        /**
+         * wrapper被跳过
+         */
+        SKIP(6);
 
-        private final Object lock = new Object();
+        // public
 
-        private volatile boolean started = false;
-        private volatile boolean ended = false;
-        private volatile long startWorkingTime;
-        private volatile long endWorkingTime;
-        private volatile Thread doWorkingThread;
-
-        public TimeOutProperties(boolean enable, long time, TimeUnit unit, boolean allowInterrupt, WorkerWrapper<?, ?> wrapper) {
-            this.enable = enable;
-            this.time = time;
-            this.unit = unit;
-            this.allowInterrupt = allowInterrupt;
-            this.wrapper = wrapper;
+        public boolean finished() {
+            return this == SUCCESS || this == ERROR || this == SKIP;
         }
 
-        // ========== 工作线程调用 ==========
+        // package
 
-        public void startWorking() {
-            synchronized (lock) {
-                started = true;
-                startWorkingTime = SystemClock.now();
-                doWorkingThread = Thread.currentThread();
-            }
+        State(int id) {
+            this.id = id;
         }
 
-        public void endWorking() {
-            synchronized (lock) {
-                ended = true;
-                doWorkingThread = null;
-                endWorkingTime = SystemClock.now();
-            }
-        }
+        final int id;
 
-        // ========== 轮询线程调用 ==========
+        // package-static
+
+        static final State[] states_of_notWorked = new State[]{INIT, STARTED};
+
+        static final State[] states_of_skipOrAfterWork = new State[]{SKIP, AFTER_WORK};
+
+        static final State[] states_of_checkTimeoutAllowStates = new State[]{INIT, STARTED, WORKING};
+
+        static final State[] states_all = new State[]{BUILDING, INIT, STARTED, WORKING, AFTER_WORK, SUCCESS, ERROR, SKIP};
 
         /**
-         * 检查超时。
-         * 可以将boolean参数传入true以在超时的时候直接失败。
+         * 自旋+CAS的设置状态，如果状态不在exceptValues返回内 或 没有设置成功，则返回false。
          *
-         * @param withStop 如果为false，不会发生什么，仅仅是单纯的判断是否超时。
-         *                 如果为true，则会去快速失败wrapper{@link #failNow()}，有必要的话还会打断线程。
-         * @return 如果 超时 或 执行时间超过限制 返回true；未超时返回false。
+         * @param state        {@link WorkerWrapper#state} 要被修改的AtomicInteger引用
+         * @param exceptValues 期望的值数组，任何满足该值的state都会被修改
+         * @param newValue     新值
+         * @param withOperate  如果该参数不为null并且成功设置，该函数将会被执行，其参数为wrapper原子设置之前的旧状态。
+         *                     之所以需要这个参数，是因为当except值有多个时，无法确定是哪个值被原子修改了。
+         * @return 返回是否成功设置。
          */
-        public boolean checkTimeOut(boolean withStop) {
-            if (enable) {
-                synchronized (lock) {
-                    if (started) {
-                        // 判断执行中的wrapper是否超时
-                        long dif = (ended ? endWorkingTime : SystemClock.now()) - startWorkingTime;
-                        if (dif > unit.toMillis(time)) {
-                            if (withStop) {
-                                if (allowInterrupt) {
-                                    doWorkingThread.interrupt();
-                                }
-                                wrapper.failNow();
-                                ended = true;
-                            }
-                            return true;
-                        }
-                        return false;
+        static boolean setState(AtomicInteger state,
+                                State[] exceptValues,
+                                State newValue,
+                                Consumer<State> withOperate) {
+            int current;
+            boolean inExcepts;
+            while (true) {
+                // 判断当前值是否在exceptValues范围内
+                current = state.get();
+                inExcepts = false;
+                for (State exceptValue : exceptValues) {
+                    if (inExcepts = current == exceptValue.id) {
+                        break;
                     }
                 }
+                // 如果不在 exceptValues 范围内，直接返回false。
+                if (!inExcepts) {
+                    return false;
+                }
+                // 如果在 exceptValues 范围，cas成功返回true，失败（即当前值被修改）则自旋。
+                if (state.compareAndSet(current, newValue.id)) {
+                    if (withOperate != null) {
+                        withOperate.accept(of(current));
+                    }
+                    return true;
+                }
             }
+        }
+
+        /**
+         * 自旋+CAS的设置状态，如果状态不在exceptValues返回内 或 没有设置成功自旋后不在范围内，则返回false。
+         *
+         * @param state       {@link WorkerWrapper#state} 要被修改的AtomicInteger引用
+         * @param exceptValue 期望的值
+         * @param newValue    新值
+         * @return 返回是否成功设置。
+         */
+        static boolean setState(AtomicInteger state,
+                                State exceptValue,
+                                State newValue) {
+            int current;
+            // 如果当前值与期望值相同
+            while ((current = state.get()) == exceptValue.id) {
+                // 则尝试CAS设置新值
+                if (state.compareAndSet(current, newValue.id)) {
+                    return true;
+                }
+                // 如果当前值被改变，则尝试自旋
+            }
+            // 如果当前值与期望值不相同了，就直接返回false
             return false;
         }
 
-        // ========== package ==========
-
-        boolean isEnable() {
-            return enable;
+        /**
+         * 自旋+CAS的判断是否在这些excepts范围内
+         *
+         * @param excepts 范围。
+         */
+        static boolean inStates(AtomicInteger state, State... excepts) {
+            int current;
+            boolean inExcepts;
+            while (true) {
+                current = state.get();
+                inExcepts = false;
+                for (State except : excepts) {
+                    if (current == except.id) {
+                        inExcepts = true;
+                        break;
+                    }
+                }
+                if (state.get() == current) {
+                    return inExcepts;
+                }
+            }
         }
 
-        long getTime() {
-            return time;
+        /**
+         * CAS的判断是否是某个状态
+         */
+        static boolean isState(AtomicInteger state, State except) {
+            return state.compareAndSet(except.id, except.id);
         }
 
-        TimeUnit getUnit() {
-            return unit;
+        static State of(int id) {
+            return id2state.get(id);
         }
 
-        boolean isAllowInterrupt() {
-            return allowInterrupt;
-        }
+        static final Map<Integer, State> id2state;
 
-        Object getLock() {
-            return lock;
-        }
-
-        boolean isStarted() {
-            return started;
-        }
-
-        void setStarted(boolean started) {
-            this.started = started;
-        }
-
-        boolean isEnded() {
-            return ended;
-        }
-
-        void setEnded(boolean ended) {
-            this.ended = ended;
-        }
-
-        long getStartWorkingTime() {
-            return startWorkingTime;
-        }
-
-        void setStartWorkingTime(long startWorkingTime) {
-            this.startWorkingTime = startWorkingTime;
-        }
-
-        long getEndWorkingTime() {
-            return endWorkingTime;
-        }
-
-        void setEndWorkingTime(long endWorkingTime) {
-            this.endWorkingTime = endWorkingTime;
-        }
-
-        Thread getDoWorkingThread() {
-            return doWorkingThread;
-        }
-
-        void setDoWorkingThread(Thread doWorkingThread) {
-            this.doWorkingThread = doWorkingThread;
+        static {
+            HashMap<Integer, State> map = new HashMap<>();
+            for (State s : State.values()) {
+                map.put(s.id, s);
+            }
+            id2state = Collections.unmodifiableMap(map);
         }
 
 
-        // ========== toString ==========
+    }
 
-        @Override
-        public String toString() {
-            return "TimeOutProperties{" +
-                    "enable=" + enable +
-                    ", time=" + time +
-                    ", unit=" + unit +
-                    ", allowInterrupt=" + allowInterrupt +
-                    ", wrapper::getId=" + wrapper.getId() +
-                    ", started=" + started +
-                    ", ended=" + ended +
-                    ", startWorkingTime=" + startWorkingTime +
-                    ", endWorkingTime=" + endWorkingTime +
-                    ", doWorkingThread=" + doWorkingThread +
-                    '}';
+    /**
+     * 这是因未知错误而引发的异常
+     */
+    public static class NotExpectedException extends Exception {
+        public NotExpectedException(Throwable cause, WorkerWrapper<?, ?> wrapper) {
+            super("It's should not happened Exception . wrapper is " + wrapper, cause);
         }
     }
 }

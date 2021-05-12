@@ -2,10 +2,9 @@ package com.jd.platform.async.wrapper;
 
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
-import com.jd.platform.async.worker.WorkResult;
-import com.jd.platform.async.wrapper.actionstrategy.DependWrapperActionStrategy;
-import com.jd.platform.async.wrapper.actionstrategy.DependenceStrategy;
-import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
+import com.jd.platform.async.wrapper.strategy.depend.DependWrapperActionStrategy;
+import com.jd.platform.async.wrapper.strategy.depend.DependenceStrategy;
+import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
 
 import java.util.Collection;
 import java.util.concurrent.TimeUnit;
@@ -257,13 +256,6 @@ public interface WorkerWrapperBuilder<T, V> {
          */
         SetTimeOut<T, V> setTime(long time, TimeUnit unit);
 
-        /**
-         * 是否允许被试图中断线程
-         *
-         * @param allow 是则true
-         */
-        SetTimeOut<T, V> allowInterrupt(boolean allow);
-
         WorkerWrapperBuilder<T, V> end();
     }
 
@@ -274,12 +266,19 @@ public interface WorkerWrapperBuilder<T, V> {
      * @param unit 时间单位
      */
     default WorkerWrapperBuilder<T, V> timeout(long time, TimeUnit unit) {
-        return timeout(true, time, unit, false);
+        return timeout(true, time, unit);
     }
 
-    default WorkerWrapperBuilder<T, V> timeout(boolean enableTimeOut, long time, TimeUnit unit, boolean allowInterrupt) {
-        return setTimeOut().enableTimeOut(enableTimeOut).setTime(time, unit).allowInterrupt(allowInterrupt).end();
+    default WorkerWrapperBuilder<T, V> timeout(boolean enableTimeOut, long time, TimeUnit unit) {
+        return setTimeOut().enableTimeOut(enableTimeOut).setTime(time, unit).end();
     }
+
+    /**
+     * 是否允许被试图中断线程
+     *
+     * @param allow 是则true
+     */
+    WorkerWrapperBuilder<T, V> allowInterrupt(boolean allow);
 
     /**
      * 构建Wrapper。

@@ -13,7 +13,7 @@ import com.jd.platform.async.wrapper.WorkerWrapper;
 class LambdaTest {
     public static void main(String[] args) throws Exception {
         WorkerWrapper<WorkResult<User>, String> workerWrapper2 = new WorkerWrapper.Builder<WorkResult<User>, String>()
-                .worker((WorkResult<User> result, Map<String, WorkerWrapper> allWrappers) -> {
+                .worker((WorkResult<User> result, Map<String, WorkerWrapper<?, ?>> allWrappers) -> {
                     System.out.println("par2的入参来自于par1： " + result.getResult());
                     try {
                         Thread.sleep(1000);
@@ -28,7 +28,7 @@ class LambdaTest {
                 .build();
 
         WorkerWrapper<WorkResult<User>, User> workerWrapper1 = new WorkerWrapper.Builder<WorkResult<User>, User>()
-                .worker((WorkResult<User> result, Map<String, WorkerWrapper> allWrappers) -> {
+                .worker((WorkResult<User> result, Map<String, WorkerWrapper<?, ?>> allWrappers) -> {
                     System.out.println("par1的入参来自于par0： " + result.getResult());
                     try {
                         Thread.sleep(1000);
@@ -44,7 +44,7 @@ class LambdaTest {
                 .build();
 
         WorkerWrapper<String, User> workerWrapper = new WorkerWrapper.Builder<String, User>()
-                .worker((String object, Map<String, WorkerWrapper> allWrappers) -> {
+                .worker((String object, Map<String, WorkerWrapper<?,?>> allWrappers) -> {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {

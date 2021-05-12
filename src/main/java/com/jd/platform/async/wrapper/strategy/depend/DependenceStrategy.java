@@ -1,6 +1,5 @@
-package com.jd.platform.async.wrapper.actionstrategy;
+package com.jd.platform.async.wrapper.strategy.depend;
 
-import com.jd.platform.async.wrapper.WrapperEndingInspector;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
@@ -41,7 +40,7 @@ public interface DependenceStrategy {
      *                       </p>
      * @return 返回枚举值内部类，WorkerWrapper将会根据其值来决定自己如何响应这次调用。 {@link DependenceAction.WithProperty}
      */
-    DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?,?>> dependWrappers,
+    DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                               WorkerWrapper<?, ?> thisWrapper,
                                               WorkerWrapper<?, ?> fromWrapper);
 
@@ -55,7 +54,7 @@ public interface DependenceStrategy {
         DependenceStrategy that = this;
         return new DependenceStrategy() {
             @Override
-            public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?,?>> dependWrappers,
+            public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                                              WorkerWrapper<?, ?> thisWrapper,
                                                              WorkerWrapper<?, ?> fromWrapper) {
                 DependenceAction.WithProperty judge = that.judgeAction(dependWrappers, thisWrapper, fromWrapper);
@@ -81,7 +80,7 @@ public interface DependenceStrategy {
      */
     DependenceStrategy ALL_DEPENDENCIES_ALL_SUCCESS = new DependenceStrategy() {
         @Override
-        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?,?>> dependWrappers,
+        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                                          WorkerWrapper<?, ?> thisWrapper,
                                                          WorkerWrapper<?, ?> fromWrapper) {
             boolean hasWaiting = false;
@@ -119,7 +118,7 @@ public interface DependenceStrategy {
      */
     DependenceStrategy ALL_DEPENDENCIES_ANY_SUCCESS = new DependenceStrategy() {
         @Override
-        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?,?>> dependWrappers,
+        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                                          WorkerWrapper<?, ?> thisWrapper,
                                                          WorkerWrapper<?, ?> fromWrapper) {
             boolean hasFailed = false;
@@ -159,7 +158,7 @@ public interface DependenceStrategy {
      */
     DependenceStrategy ALL_DEPENDENCIES_NONE_FAILED = new DependenceStrategy() {
         @Override
-        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?,?>> dependWrappers,
+        public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                                          WorkerWrapper<?, ?> thisWrapper,
                                                          WorkerWrapper<?, ?> fromWrapper) {
             for (WorkerWrapper<?, ?> dependWrapper : dependWrappers) {
@@ -188,7 +187,7 @@ public interface DependenceStrategy {
      * @param theseWrapper 该方法唯一有效参数。
      * @return 返回生成的 {@link DependenceAction.WithProperty)
      */
-    static DependenceStrategy theseWrapperAllSuccess(Set<WorkerWrapper<?,?>> theseWrapper) {
+    static DependenceStrategy theseWrapperAllSuccess(Set<WorkerWrapper<?, ?>> theseWrapper) {
         return new DependenceStrategy() {
             private final Set<WorkerWrapper<?, ?>> theseWrappers;
             private final String toString;
@@ -199,7 +198,7 @@ public interface DependenceStrategy {
             }
 
             @Override
-            public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?,?>> dependWrappers,
+            public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                                              WorkerWrapper<?, ?> thisWrapper,
                                                              WorkerWrapper<?, ?> fromWrapper) {
                 boolean hasWaiting = false;
@@ -232,7 +231,16 @@ public interface DependenceStrategy {
         };
     }
 
-    DependenceStrategy  IF_MUST_SET_NOT_EMPTY_ALL_SUCCESS_ELSE_ANY = new DependenceStrategy() {
+    /**
+     * 此值用于适配v1.4及之前的must开关模式，
+     * 当`wrapperStrategy`的`dependMustStrategyMapper`的`mustDependSet`不为空时，
+     * 则休息（因为能判断到这个责任链说明set中存在不满足的值L）。
+     * 为空时，则任一成功则执行。
+     *
+     * @deprecated 不推荐使用must开关
+     */
+    @Deprecated
+    DependenceStrategy IF_MUST_SET_NOT_EMPTY_ALL_SUCCESS_ELSE_ANY = new DependenceStrategy() {
         @Override
         public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                                          WorkerWrapper<?, ?> thisWrapper,

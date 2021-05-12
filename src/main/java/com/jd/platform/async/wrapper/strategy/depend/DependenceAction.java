@@ -1,4 +1,4 @@
-package com.jd.platform.async.wrapper.actionstrategy;
+package com.jd.platform.async.wrapper.strategy.depend;
 
 import com.jd.platform.async.worker.ResultState;
 
@@ -13,7 +13,7 @@ public enum DependenceAction {
      */
     START_WORK,
     /**
-     * 还没轮到，休息一下。WorkerWrapper中的调用栈会返回，以等待可能发生的下次调用。
+     * 还没轮到，休息一下。WorkerWrapper中的调用栈会返回，以等待其他上游wrapper调用它，或是会一生无缘被调用。
      */
     TAKE_REST,
     /**
@@ -22,6 +22,8 @@ public enum DependenceAction {
     FAST_FAIL,
     /**
      * 交给下层{@link DependenceStrategy}进行判断。
+     * 由于{@link DependenceStrategy#thenJudge(DependenceStrategy)}的责任链设计模式，该返回值的意义就是调用责任链上下一个策略。
+     * <p/>
      * 在WorkerWrapper中不需要考虑此值，因为配置正常的情况下不会返回这个值。
      */
     JUDGE_BY_AFTER;
@@ -29,6 +31,10 @@ public enum DependenceAction {
     // 空值单例
 
     public WithProperty emptyProperty() {
+        if (this == FAST_FAIL) {
+            throw new UnsupportedOperationException(
+                    "配置错误: FAST_FAIL 不能使用该方法，请使用fastFailException(ResultState, Exception)具体设置fastFail的参数。");
+        }
         return empty;
     }
 
@@ -66,6 +72,9 @@ public enum DependenceAction {
      * 所有的构造方法权限均为private，请在父枚举类{@link DependenceAction}的方法中选择合适的模板生成内部类WithProperty。
      */
     public class WithProperty {
+        /**
+         * 以下两个属性用于设置fastFail的属性
+         */
         private ResultState resultState;
         private Exception fastFailException;
 

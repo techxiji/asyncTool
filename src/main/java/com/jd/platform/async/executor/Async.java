@@ -5,7 +5,7 @@ import com.jd.platform.async.callback.DefaultGroupCallback;
 import com.jd.platform.async.callback.IGroupCallback;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.wrapper.WorkerWrapper;
-import com.jd.platform.async.wrapper.WrapperEndingInspector;
+import com.jd.platform.async.wrapper.WorkerWrapperGroup;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -29,32 +29,29 @@ public class Async {
      */
     public static boolean beginWork(long timeout,
                                     ExecutorService executorService,
-                                    Collection<? extends WorkerWrapper<?,?>> workerWrappers)
+                                    Collection<? extends WorkerWrapper<?, ?>> workerWrappers)
             throws InterruptedException {
         if (workerWrappers == null || workerWrappers.size() == 0) {
             return false;
         }
         //保存上次执行的线程池变量（为了兼容以前的旧功能）
         Async.lastExecutorService = Objects.requireNonNull(executorService, "ExecutorService is null ! ");
-        //定义一个map，存放所有的wrapper，key为wrapper的唯一id，value是该wrapper，可以从value中获取wrapper的result
-        final ConcurrentMap<String, WorkerWrapper<?,?>> forParamUseWrappers =
-                new ConcurrentHashMap<>(Math.max(workerWrappers.size() * 3, 8));
-        final WrapperEndingInspector inspector = new WrapperEndingInspector(SystemClock.now() + timeout);
-        inspector.addWrapper(workerWrappers);
+        WorkerWrapperGroup group = new WorkerWrapperGroup(SystemClock.now(), timeout);
+        group.addWrapper(workerWrappers);
         workerWrappers.forEach(wrapper -> {
             if (wrapper == null) {
                 return;
             }
-            executorService.submit(() -> wrapper.work(executorService, timeout, forParamUseWrappers, inspector));
+            executorService.submit(() -> wrapper.work(executorService, timeout, group));
         });
-        inspector.registerToPollingCenter();
-        return inspector.await();
+        return group.awaitFinish();
         //处理超时的逻辑被移动到了WrapperEndingInspector中。
     }
 
     /**
      * 如果想自定义线程池，请传pool。不自定义的话，就走默认的COMMON_POOL
      */
+    @SuppressWarnings("unchecked")
     public static boolean beginWork(long timeout, ExecutorService executorService, WorkerWrapper... workerWrapper)
             throws ExecutionException, InterruptedException {
         if (workerWrapper == null || workerWrapper.length == 0) {
@@ -138,6 +135,9 @@ public class Async {
      */
     private static volatile ExecutorService lastExecutorService;
 
+    /**
+     * 该方法将会返回{@link #COMMON_POOL}，如果还未初始化则会懒加载初始化后再返回。
+     */
     public static ThreadPoolExecutor getCommonPool() {
         if (COMMON_POOL == null) {
             synchronized (Async.class) {
@@ -181,7 +181,14 @@ public class Async {
                 ",largestCount=" + COMMON_POOL.getLargestPoolSize();
     }
 
+    /**
+     * @param now 是否立即关闭
+     * @throws IllegalStateException 如果尚未调用过{@link #getCommonPool()}，即没有使用过“使用默认线程池”的方法，该方法会抛出空指针异常。
+     */
     public static synchronized void shutDownCommonPool(boolean now) {
+        if (COMMON_POOL == null) {
+            throw new IllegalStateException("COMMON_POOL Not initialized yet");
+        }
         if (!COMMON_POOL.isShutdown()) {
             if (now) {
                 COMMON_POOL.shutdownNow();

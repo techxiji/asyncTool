@@ -20,7 +20,7 @@ class ParWorker1 implements IWorker<String, String>, ICallback<String, String> {
     }
 
     @Override
-    public String action(String object, Map<String, WorkerWrapper> allWrappers) {
+    public String action(String object, Map<String, WorkerWrapper<?,?>> allWrappers) {
         try {
             Thread.sleep(sleepTime);
         } catch (InterruptedException e) {
