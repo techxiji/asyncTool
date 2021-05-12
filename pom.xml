@@ -6,7 +6,8 @@
 
     <groupId>com.jd.platform</groupId>
     <artifactId>asyncTool</artifactId>
-    <version>1.4.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <version>1.5.1-SNAPSHOT</version>
 
     <build>
         <plugins>
@@ -21,4 +22,8 @@
             </plugin>
         </plugins>
     </build>
+    <modules>
+        <module>asyncTool-openutil</module>
+        <module>asyncTool-core</module>
+    </modules>
 </project>
