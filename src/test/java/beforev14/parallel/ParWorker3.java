@@ -19,7 +19,7 @@ class ParWorker3 implements IWorker<String, String>, ICallback<String, String> {
         this.sleepTime = sleepTime;
     }
     @Override
-    public String action(String object, Map<String, WorkerWrapper> allWrappers) {
+    public String action(String object, Map<String, WorkerWrapper<?,?>> allWrappers) {
         try {
             Thread.sleep(sleepTime);
         } catch (InterruptedException e) {

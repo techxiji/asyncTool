@@ -14,7 +14,7 @@ import java.util.Map;
 class DeWorker1 implements IWorker<WorkResult<User>, User>, ICallback<WorkResult<User>, User> {
 
     @Override
-    public User action(WorkResult<User> result, Map<String, WorkerWrapper> allWrappers) {
+    public User action(WorkResult<User> result, Map<String, WorkerWrapper<?,?>> allWrappers) {
         System.out.println("par1的入参来自于par0： " + result.getResult());
         try {
             Thread.sleep(1000);

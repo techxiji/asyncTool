@@ -1,14 +1,14 @@
-package v15.dependnew;
+package v15.wrappertest;
 
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.worker.ResultState;
-import com.jd.platform.async.wrapper.actionstrategy.DependenceAction;
-import com.jd.platform.async.wrapper.actionstrategy.DependenceStrategy;
+import com.jd.platform.async.wrapper.strategy.depend.DependenceAction;
+import com.jd.platform.async.wrapper.strategy.depend.DependenceStrategy;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
-import com.jd.platform.async.wrapper.skipstrategy.SkipStrategy;
+import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
 
 import java.io.PrintStream;
 import java.util.*;
@@ -136,7 +136,7 @@ class Test {
     }
 
     /**
-     * 测试旧版本(v1.4及以前)中可能会引发线程耗尽bug的情况：
+     * 测试旧版本(v1.4)中可能会引发线程耗尽bug的情况：
      * <p>
      * A(5ms)--B1(10ms) ---|--> C1(5ms)
      * .  \                |             (B1、B2全部完成可执行C1、C2)
@@ -195,10 +195,10 @@ class Test {
                 // B4、B5总任务超时
                 .nextOf(testBuilder("B4", 250).build())
                 .nextOf(testBuilder("B5", 250)
-                        .setTimeOut().enableTimeOut(true).setTime(300, TimeUnit.MILLISECONDS).allowInterrupt(false).end()
+                        .setTimeOut().enableTimeOut(true).setTime(300, TimeUnit.MILLISECONDS).end()
                         .build())
                 // 测试打断B6线程
-                .nextOf(testBuilder("B6", 250).timeout(true, 150, TimeUnit.MILLISECONDS, true).build())
+                .nextOf(testBuilder("B6", 250).timeout(true, 150, TimeUnit.MILLISECONDS).allowInterrupt(true).build())
                 .build();
         long t1 = SystemClock.now();
         boolean success = Async.beginWork(200, pool, a);

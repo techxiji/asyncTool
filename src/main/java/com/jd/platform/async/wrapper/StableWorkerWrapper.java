@@ -4,15 +4,22 @@ import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * {@link WorkerWrapper}默认实现类，将上下游Wrapper保存在自己的Set中。
  *
  * @author create by TcSnZh on 2021/5/6-下午2:41
  */
-class StableWorkerWrapper<T, V> extends WorkerWrapper<T, V> {
-    StableWorkerWrapper(String id, IWorker<T, V> worker, T param, ICallback<T, V> callback) {
-        super(id, worker, param, callback);
+public class StableWorkerWrapper<T, V> extends WorkerWrapper<T, V> {
+    public StableWorkerWrapper(String id,
+                               IWorker<T, V> worker,
+                               ICallback<T, V> callback,
+                               boolean allowInterrupt,
+                               boolean enableTimeout,
+                               long timeoutLength,
+                               TimeUnit timeoutUnit) {
+        super(id, worker, callback, allowInterrupt, enableTimeout, timeoutLength, timeoutUnit);
     }
 
     /**
@@ -45,7 +52,6 @@ class StableWorkerWrapper<T, V> extends WorkerWrapper<T, V> {
         return nextWrappers;
     }
 
-
     // ========== package impl ==========
 
     @Override
@@ -54,7 +60,7 @@ class StableWorkerWrapper<T, V> extends WorkerWrapper<T, V> {
     }
 
     @Override
-    Set<WorkerWrapper<?, ?>> getDependWrappers() {
+    public Set<WorkerWrapper<?, ?>> getDependWrappers() {
         return dependWrappers;
     }
 

@@ -14,7 +14,7 @@ import java.util.Map;
 class DeWorker implements IWorker<String, User>, ICallback<String, User> {
 
     @Override
-    public User action(String object, Map<String, WorkerWrapper> allWrappers) {
+    public User action(String object, Map<String, WorkerWrapper<?,?>> allWrappers) {
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {

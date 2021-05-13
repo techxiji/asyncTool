@@ -1,4 +1,4 @@
-package com.jd.platform.async.wrapper.actionstrategy;
+package com.jd.platform.async.wrapper.strategy.depend;
 
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.wrapper.WorkerWrapper;
