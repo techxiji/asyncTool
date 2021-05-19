@@ -1,0 +1,9 @@
+{
+  "drawingsName": "case1_1",
+  "wrappers": [
+    {
+      "id": "first",
+      "worker": "schedulingtest.impl.SelectUserByName"
+    }
+  ]
+}
