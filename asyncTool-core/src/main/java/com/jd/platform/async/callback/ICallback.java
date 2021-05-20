@@ -29,7 +29,7 @@ public interface ICallback<T, V> {
     /**
      * 提供常量选项：打印异常信息，跳过时的异常{@link SkippedException}不会打印。
      */
-    ICallback<?, ?> PRINT_EXCEPTION_STACK_TRACE = new ICallback<Object, Object>() {
+    ICallback PRINT_EXCEPTION_STACK_TRACE = new ICallback<Object, Object>() {
         @Override
         public void result(boolean success, Object param, WorkResult<Object> workResult) {
             Exception ex = workResult.getEx();

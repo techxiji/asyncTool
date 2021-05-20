@@ -1048,33 +1048,34 @@ SetNext<T, V> specialToNextWrapper(DependWrapperActionStrategy strategy, WorkerW
 class Case6 {
     private static WorkerWrapperBuilder<?, ?> builder(String id) {
         return WorkerWrapper.<String, String>builder()
-                .id(id)
-                .worker((param, allWrappers) -> {
-                    System.out.println("wrapper(id=" + id + ") is working");
-                    try {
-                        Thread.sleep(50);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    return null;
-                });
+            .id(id)
+            .worker((param, allWrappers) -> {
+                System.out.println("wrapper(id=" + id + ") is working");
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                return null;
+            });
     }
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
         WorkerWrapper<?, ?> b = builder("B")
-                // 这里设置了，不论a怎么样b都会快速失败。但是，a设置的对wrapper的特殊策略把它覆盖了。
-                .depends((dependWrappers, thisWrapper, fromWrapper) ->
-                        DependenceAction.FAST_FAIL
-                                .fastFailException(ResultState.EXCEPTION, new RuntimeException("b 必定失败，除非有上游wrapper救他"))
-                )
-                .build();
+            // 这里设置了，不论a怎么样b都会快速失败。但是，a设置的对wrapper的特殊策略把它覆盖了。
+            .depends((dependWrappers, thisWrapper, fromWrapper) ->
+                     DependenceAction.FAST_FAIL
+                     .fastFailException(ResultState.EXCEPTION, new RuntimeException("b 必定失败，除非有上游wrapper救他"))
+                    )
+            .callback(ICallback.PRINT_EXCEPTION_STACK_TRACE)
+            .build();
         WorkerWrapper<?, ?> a = builder("A")
-                .setNext()
-                // a将会使b直接开始工作
-                // 若是去掉这行代码，则b会失败
-                .specialToNextWrapper(fromWrapper -> DependenceAction.START_WORK.emptyProperty(), b)
-                .wrapper(b)
-                .end().build();
+            .setNext()
+            // a将会使b直接开始工作
+            // 若是去掉这行代码，则b会失败
+            .specialToNextWrapper(fromWrapper -> DependenceAction.START_WORK.emptyProperty(), b)
+            .wrapper(b)
+            .end().build();
         Async.beginWork(1000, a);
         System.out.println(a.getWorkResult());
         System.out.println(b.getWorkResult());
@@ -1394,9 +1395,9 @@ public interface WorkerWrapperBuilder<T, V> {
 >```xml
 ><!-- 动态任务调度，有需要的话可以引入。依赖fastjson，请自行解决版本冲突 -->
 ><dependency>
->    <artifactId>asyncTool-scheduling</artifactId>
->    <groupId>com.jd.platform</groupId>
->    <version>1.5.0-SNAPSHOT</version>
+>        <artifactId>asyncTool-scheduling</artifactId>
+>        <groupId>com.jd.platform</groupId>
+>        <version>1.5.0-SNAPSHOT</version>
 ></dependency>
 >```
 
@@ -1439,14 +1440,14 @@ wrappers:[
         // 而且：不能与wrappers数组中其他的对象的id属性相同。即必须保证id唯一。
         // 不允许undefined，不允许null。
         "id": "first",
-        // param，即参数。请看《param属性格式》
+        // param，即参数。请看《param》
         // useObjectModel代表value的值是否是“对象模型”。
-        // 允许undefined，如果undefined则使用null。显然，允许null。
+        // 允许undefined或null，视为{"useObjectModel": false,"value": null}
         "param": {
             "useObjectModel": false,
             "value": "JackMa"
         },
-        // 传入对象模型，请看《对象模型》
+        // 传入对象模型，请看《对象模型ObjectModel》
         // 不允许undefined或null
         "worker": {
             "sameObjectId": 1,
@@ -1457,8 +1458,9 @@ wrappers:[
         "callback": {
             "sameObjectId": 1
         },
-        // wrapper依赖策略
+        // wrapper策略
         // 允许undefined与null。如果为两者则使用com.jd.platform.async.wrapper.strategy.WrapperStrategy.DefaultWrapperStrategy
+        // 即"ALL_DEPENDENCIES_ALL_SUCCESS"与"CHECK_ONE_LEVEL"
         "wrapperStrategy": {
             // 传入{}键值对，键名为即wrapper的id属性，值为对象模型。
             // 允许undefined和null，两者之意与空键值对{}并无二致
@@ -1522,7 +1524,7 @@ wrappers:[
 `useObjectModel`属性用于说明`value`属性的所代表的对象类型：
 
 * 为false：使用json所对应的类型。
-* 为true：使用《实现类对象规范》中的我们自定义的对象模型。
+* 为true：使用《对象模型`ObjectModel`》中的我们自定义的对象模型。
 
 ```json
 {
@@ -1604,8 +1606,12 @@ beginWork: {
     // 如果设置了该属性，其他的属性均会被忽视。（优先级低于constObjectName）
     "sameObjectId": 1,
     // 提供类的全限定名字符串，将调用无参构造方法进行初始化
+    // 如果constObjectName设置了非null且非undefined值，则此值允许为null或undefined
+    // 如果sameObjectId设置了非null且非undefined值，则id相同的对象模型中允许且只允许一个值为非null或非undefined，其他的都必须为null或undefined
     "className": "your.package.name.YourKlassName",
     // 初始化后，会根据该值来修改对象属性
+    // 允许为null或undefined，表示不额外设置属性
+    
     "properties": {
         // 其中的键值对为各字段名。这些字段需要有getter、setter方法。
         "myIntegerField": 123123

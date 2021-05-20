@@ -2,6 +2,7 @@ package com.jd.platform.async.scheduling.model;
 
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -159,6 +160,22 @@ public class SchedulingDrawingsModel {
         public void setExtendConfig(String extendConfig) {
             this.extendConfig = extendConfig;
         }
+
+        @Override
+        public String toString() {
+            return "WrapperModel{" +
+                    "id='" + id + '\'' +
+                    ", param=" + param +
+                    ", worker=" + worker +
+                    ", callback=" + callback +
+                    ", wrapperStrategy=" + wrapperStrategy +
+                    ", allowInterrupt=" + allowInterrupt +
+                    ", enableTimeout=" + enableTimeout +
+                    ", timeoutLength=" + timeoutLength +
+                    ", timeUnit=" + timeUnit +
+                    ", extendConfig='" + extendConfig + '\'' +
+                    '}';
+        }
     }
 
     public static class RelationModel {
@@ -179,6 +196,14 @@ public class SchedulingDrawingsModel {
 
         public void setTo(Object to) {
             this.to = to;
+        }
+
+        @Override
+        public String toString() {
+            return "RelationModel{" +
+                    "from=" + from +
+                    ", to=" + to +
+                    '}';
         }
     }
 
@@ -219,6 +244,16 @@ public class SchedulingDrawingsModel {
         public void setExecutor(String executor) {
             this.executor = executor;
         }
+
+        @Override
+        public String toString() {
+            return "BeginWorkModel{" +
+                    "timeoutLength=" + timeoutLength +
+                    ", timeoutUnit=" + timeoutUnit +
+                    ", wrappers=" + wrappers +
+                    ", executor='" + executor + '\'' +
+                    '}';
+        }
     }
 
     public String getDrawingsName() {
@@ -251,5 +286,15 @@ public class SchedulingDrawingsModel {
 
     public void setBeginWork(BeginWorkModel beginWork) {
         this.beginWork = beginWork;
+    }
+
+    @Override
+    public String toString() {
+        return "SchedulingDrawingsModel{" +
+                "drawingsName='" + drawingsName + '\'' +
+                ", wrappers=" + wrappers +
+                ", relations=" + relations +
+                ", beginWork=" + beginWork +
+                '}';
     }
 }

@@ -11,7 +11,6 @@ import java.util.Map;
 /**
  * @author tcsnzh[zh.jobs@foxmail.com] create this in 2021/5/19-下午7:51
  */
-@SuppressWarnings("unused")
 public class ObjectModel {
     protected String constObjectName;
     protected String className;
@@ -57,6 +56,16 @@ public class ObjectModel {
         return constObjects;
     }
 
+    @Override
+    public String toString() {
+        return "ObjectModel{" +
+                "constObjectName='" + constObjectName + '\'' +
+                ", className='" + className + '\'' +
+                ", sameObjectId=" + sameObjectId +
+                ", properties=" + properties +
+                '}';
+    }
+
     // static constants
 
     private static final Map<String, Object> constObjects;
@@ -71,6 +80,10 @@ public class ObjectModel {
         constObjects.put("SUCCESS_CONTINUE", DependOnUpWrapperStrategy.SUCCESS_CONTINUE);
         constObjects.put("SUCCESS_START_INIT_CONTINUE", DependOnUpWrapperStrategy.SUCCESS_START_INIT_CONTINUE);
         constObjects.put("PRINT_EXCEPTION_STACK_TRACE", ICallback.PRINT_EXCEPTION_STACK_TRACE);
+    }
+
+    public static boolean containConstObject(String name) {
+        return constObjects.containsKey(name);
     }
 
     public static <T> T getConstObject(String name) {

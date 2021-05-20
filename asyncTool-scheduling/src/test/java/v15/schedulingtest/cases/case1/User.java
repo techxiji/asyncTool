@@ -1,9 +1,9 @@
-package schedulingtest.entity;
+package v15.schedulingtest.cases.case1;
 
 /**
  * @author create by TcSnZh on 2021/5/17-上午1:33
  */
-public class User {
+class User {
     private String name;
     private int age;
     private double money;

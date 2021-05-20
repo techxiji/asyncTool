@@ -10,7 +10,4 @@ public abstract class ReflectUtil {
     private ReflectUtil() {
     }
 
-    public static void foreachField(Class<?> clazz) {
-
-    }
 }

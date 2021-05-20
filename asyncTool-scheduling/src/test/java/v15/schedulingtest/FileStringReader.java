@@ -1,4 +1,4 @@
-package schedulingtest;
+package v15.schedulingtest;
 
 import java.io.*;
 import java.util.Objects;
@@ -33,9 +33,5 @@ public class FileStringReader {
                 }
             }
         }
-    }
-
-    public static void main(String[] args) {
-        System.out.println("test readFile : \n\n" + readFile("case1_1.json"));
     }
 }

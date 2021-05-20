@@ -1,0 +1,80 @@
+{
+  "drawingsName": "case1_1",
+  "wrappers": [
+    {
+      "id": "first",
+      "param": {
+        "useObjectModel": false,
+        "value": "JackMa"
+      },
+      "worker": {
+        "sameObjectId": 1,
+        "className:": "schedulingtest.impl.SelectUserByName"
+      },
+      "callback": {
+        "sameObjectId": 1
+      },
+      "wrapperStrategy": {
+        "dependOnUpWrapperStrategyMapper": null,
+        "dependenceStrategy": {
+          "constObjectName": "ALL_DEPENDENCIES_ALL_SUCCESS"
+        },
+        "skipStrategy": {
+          "constObjectName": "CHECK_ONE_LEVEL"
+        }
+      },
+      "allowInterrupt": true,
+      "enableTimeout": true,
+      "timeoutLength": 50,
+      "timeoutUnit": "TimeUnit.MILLISECONDS"
+    },
+    {
+      "id": "second",
+      "worker": {
+        "sameObjectId": 2,
+        "className:": "schedulingtest.impl.SelectUserByName"
+      },
+      "callback": {
+        "sameObjectId": 2
+      }
+    },
+    {
+      "id": "third",
+      "__extend": "second"
+    },
+    {
+      "id": "fourth",
+      "worker": {
+        "sameObjectId": 2,
+        "className:": "schedulingtest.impl.PrintParam"
+      },
+      "wrapperStrategy": {
+        "dependenceStrategy": {
+          "constObjectName": "ALL_DEPENDENCIES_ALL_SUCCESS"
+        }
+      }
+    }
+  ],
+  "relations": [
+    {
+      "from": "first",
+      "to": "second"
+    },
+    {
+      "from": "second",
+      "to": "fourth"
+    },
+    {
+      "from": "third",
+      "to": "fourth"
+    }
+  ],
+  "beginWork": {
+    "timeoutLength": 100,
+    "timeoutUnit": "MILLISECONDS",
+    "wrappers": [
+      "first"
+    ],
+    "executor": "COMMON_POOL"
+  }
+}

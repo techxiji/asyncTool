@@ -1,13 +1,11 @@
-package schedulingtest.impl;
+package v15.schedulingtest.cases.case1;
 
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
-import schedulingtest.entity.User;
+import v15.schedulingtest.cases.case1.User;
 
-import java.io.PrintStream;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -15,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * @author create by TcSnZh on 2021/5/17-上午1:33
  */
-public class SelectUserByName implements IWorker<String, User>, ICallback<String, User> {
+class SelectUserByName implements IWorker<String, User>, ICallback<String, User> {
     public static final long HundredMillion = 100000000;
     private static final Map<String, User> datasource;
 

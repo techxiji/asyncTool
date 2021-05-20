@@ -1,5 +1,6 @@
 package v15.cases;
 
+import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.wrapper.WorkerWrapper;
@@ -29,12 +30,14 @@ class Case6 {
     }
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
+        //noinspection unchecked
         WorkerWrapper<?, ?> b = builder("B")
                 // 这里设置了，不论a怎么样b都会快速失败。但是，a设置的对wrapper的特殊策略把它覆盖了。
                 .depends((dependWrappers, thisWrapper, fromWrapper) ->
                         DependenceAction.FAST_FAIL
                                 .fastFailException(ResultState.EXCEPTION, new RuntimeException("b 必定失败，除非有上游wrapper救他"))
                 )
+                .callback(ICallback.PRINT_EXCEPTION_STACK_TRACE)
                 .build();
         WorkerWrapper<?, ?> a = builder("A")
                 .setNext()
