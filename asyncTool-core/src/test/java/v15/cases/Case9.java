@@ -51,9 +51,15 @@ class Case9 {
 
 //        System.out.println(graph);
 
-        Async.beginWork(200, w1);
+        Async.work(200, w1).awaitFinish();
 
         System.out.println("    Begin work end .\n    w1 : " + w1 + "\n    w2 : " + w2 + "\n");
-
+        /* 输出：
+        I am IWorker 1
+        I am IWorker 2
+            Begin work end .
+            w1 : 省略
+            w2 : 省略
+         */
     }
 }

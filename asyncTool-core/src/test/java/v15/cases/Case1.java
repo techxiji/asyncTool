@@ -43,8 +43,8 @@ class Case1 {
                 )
                 .build();
         try {
-            Async.beginWork(1000, a, d);
-        } catch (ExecutionException | InterruptedException e) {
+            Async.work(1000, a, d).awaitFinish();
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
         /* 输出:

@@ -51,7 +51,7 @@ class Case4 {
         }
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            Async.beginWork(1000, pool, a);
+            Async.work(1000, pool, a).awaitFinish();
         } finally {
             pool.shutdown();
         }

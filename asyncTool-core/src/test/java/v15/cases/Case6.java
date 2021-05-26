@@ -46,7 +46,7 @@ class Case6 {
                 .specialToNextWrapper(fromWrapper -> DependenceAction.START_WORK.emptyProperty(), b)
                 .wrapper(b)
                 .end().build();
-        Async.beginWork(1000, a);
+        Async.work(1000, a).awaitFinish();
         System.out.println(a.getWorkResult());
         System.out.println(b.getWorkResult());
         /* 输出：

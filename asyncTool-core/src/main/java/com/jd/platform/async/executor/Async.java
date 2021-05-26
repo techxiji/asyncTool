@@ -4,15 +4,15 @@ package com.jd.platform.async.executor;
 import com.jd.platform.async.callback.DefaultGroupCallback;
 import com.jd.platform.async.callback.IGroupCallback;
 import com.jd.platform.async.executor.timer.SystemClock;
+import com.jd.platform.async.worker.OnceWork;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperGroup;
+import com.sun.istack.internal.Nullable;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -26,20 +26,65 @@ public class Async {
     // ========================= 任务执行核心代码 =========================
 
     /**
-     * 出发点
-     *
-     * @return 只要执行未超时，就返回true。
+     * {@link #work(long, ExecutorService, Collection, String)}方法的简易封装。
+     * 使用uuid作为工作id。使用{@link #getCommonPool()}作为线程池。
      */
-    public static boolean beginWork(long timeout,
-                                    ExecutorService executorService,
-                                    Collection<? extends WorkerWrapper<?, ?>> workerWrappers)
-            throws InterruptedException {
-        if (workerWrappers == null || workerWrappers.size() == 0) {
-            return false;
+    public static OnceWork work(long timeout,
+                                Collection<? extends WorkerWrapper<?, ?>> workerWrappers) {
+        return work(timeout, getCommonPool(), workerWrappers);
+    }
+
+    /**
+     * {@link #work(long, ExecutorService, Collection, String)}方法的简易封装。
+     * 可变参式传入。使用uuid作为工作id。使用{@link #getCommonPool()}作为线程池。
+     */
+    public static OnceWork work(long timeout,
+                                WorkerWrapper<?, ?>... workerWrappers) {
+        return work(timeout, getCommonPool(), workerWrappers);
+    }
+
+    /**
+     * {@link #work(long, ExecutorService, Collection, String)}方法的简易封装。
+     * 可变参式传入。使用uuid作为工作id。
+     */
+    public static OnceWork work(long timeout,
+                                ExecutorService executorService,
+                                WorkerWrapper<?, ?>... workerWrappers) {
+        return work(timeout, executorService, Arrays.asList(
+                Objects.requireNonNull(workerWrappers, "workerWrappers array is null")));
+    }
+
+    /**
+     * {@link #work(long, ExecutorService, Collection, String)}方法的简易封装。
+     * 省略工作id，使用uuid。
+     */
+    public static OnceWork work(long timeout,
+                                ExecutorService executorService,
+                                Collection<? extends WorkerWrapper<?, ?>> workerWrappers) {
+        return work(timeout, executorService, workerWrappers, UUID.randomUUID().toString());
+    }
+
+    /**
+     * 核心方法。
+     * 该方法不是同步阻塞执行的。如果想要同步阻塞执行，则调用返回值的{@link OnceWork#awaitFinish()}即可。
+     *
+     * @param timeout         全组超时时间
+     * @param executorService 执行线程池
+     * @param workerWrappers  任务容器集合
+     * @param workId          本次工作id
+     * @return 返回 {@link OnceWork}封装对象。
+     */
+    public static OnceWork work(long timeout,
+                                ExecutorService executorService,
+                                Collection<? extends WorkerWrapper<?, ?>> workerWrappers,
+                                String workId) {
+        if (workerWrappers == null || workerWrappers.isEmpty()) {
+            return OnceWork.emptyWork(workId);
         }
         //保存上次执行的线程池变量（为了兼容以前的旧功能）
-        Async.lastExecutorService = Objects.requireNonNull(executorService, "ExecutorService is null ! ");
-        WorkerWrapperGroup group = new WorkerWrapperGroup(SystemClock.now(), timeout);
+        Async.lastExecutorService.set(Objects.requireNonNull(executorService, "ExecutorService is null ! "));
+        final WorkerWrapperGroup group = new WorkerWrapperGroup(SystemClock.now(), timeout);
+        final OnceWork.Impl onceWork = new OnceWork.Impl(group, workId);
         group.addWrapper(workerWrappers);
         workerWrappers.forEach(wrapper -> {
             if (wrapper == null) {
@@ -47,38 +92,24 @@ public class Async {
             }
             executorService.submit(() -> wrapper.work(executorService, timeout, group));
         });
-        return group.awaitFinish();
-        //处理超时的逻辑被移动到了WrapperEndingInspector中。
+        return onceWork;
     }
 
     /**
-     * 如果想自定义线程池，请传pool。不自定义的话，就走默认的COMMON_POOL
+     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
      */
-    public static boolean beginWork(long timeout, ExecutorService executorService, WorkerWrapper... workerWrapper)
-            throws ExecutionException, InterruptedException {
-        if (workerWrapper == null || workerWrapper.length == 0) {
-            return false;
-        }
-        Set workerWrappers = Arrays.stream(workerWrapper).collect(Collectors.toSet());
-        //noinspection unchecked
-        return beginWork(timeout, executorService, workerWrappers);
-    }
-
-    /**
-     * 同步阻塞,直到所有都完成,或失败
-     */
-    public static boolean beginWork(long timeout, WorkerWrapper... workerWrapper) throws ExecutionException, InterruptedException {
-        return beginWork(timeout, getCommonPool(), workerWrapper);
-    }
-
     @SuppressWarnings("unused")
+    @Deprecated
     public static void beginWorkAsync(long timeout, IGroupCallback groupCallback, WorkerWrapper... workerWrapper) {
         beginWorkAsync(timeout, getCommonPool(), groupCallback, workerWrapper);
     }
 
     /**
      * 异步执行,直到所有都完成,或失败后，发起回调
+     *
+     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
      */
+    @Deprecated
     public static void beginWorkAsync(long timeout, ExecutorService executorService, IGroupCallback groupCallback, WorkerWrapper... workerWrapper) {
         if (groupCallback == null) {
             groupCallback = new DefaultGroupCallback();
@@ -129,7 +160,7 @@ public class Async {
      * 该线程池将会给线程取名为asyncTool-commonPool-thread-0（数字不重复）。
      * </p>
      */
-    private static ThreadPoolExecutor COMMON_POOL;
+    private static volatile ThreadPoolExecutor COMMON_POOL;
 
     /**
      * 在以前（及现在）的版本中：
@@ -137,7 +168,7 @@ public class Async {
      * <p/>
      * 注意，这里是个static，也就是只能有一个线程池。用户自定义线程池时，也只能定义一个
      */
-    private static volatile ExecutorService lastExecutorService;
+    private static final AtomicReference<ExecutorService> lastExecutorService = new AtomicReference<>(null);
 
     /**
      * 该方法将会返回{@link #COMMON_POOL}，如果还未初始化则会懒加载初始化后再返回。
@@ -155,9 +186,11 @@ public class Async {
                             new ThreadFactory() {
                                 private final AtomicLong threadCount = new AtomicLong(0);
 
+                                @SuppressWarnings("NullableProblems")
                                 @Override
                                 public Thread newThread(Runnable r) {
-                                    Thread t = new Thread(r, "asyncTool-commonPool-thread-" + threadCount.getAndIncrement());
+                                    Thread t = new Thread(r,
+                                            "asyncTool-commonPool-thread-" + threadCount.getAndIncrement());
                                     t.setDaemon(true);
                                     return t;
                                 }
@@ -189,6 +222,7 @@ public class Async {
      * @param now 是否立即关闭
      * @return 如果尚未调用过{@link #getCommonPool()}，即没有初始化默认线程池，返回false。否则返回true。
      */
+    @SuppressWarnings("unused")
     public static synchronized boolean shutDownCommonPool(boolean now) {
         if (COMMON_POOL == null) {
             return false;
@@ -203,6 +237,51 @@ public class Async {
         return true;
     }
 
+    // ========================= deprecated =========================
+
+    /**
+     * 同步执行一次任务。
+     *
+     * @return 只要执行未超时，就返回true。
+     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
+     */
+    @Deprecated
+    public static boolean beginWork(long timeout,
+                                    ExecutorService executorService,
+                                    Collection<? extends WorkerWrapper<?, ?>> workerWrappers)
+            throws InterruptedException {
+        final OnceWork work = work(timeout, executorService, workerWrappers);
+        work.awaitFinish();
+        return work.hasTimeout();
+    }
+
+    /**
+     * 同步执行一次任务。
+     * 如果想自定义线程池，请传pool。不自定义的话，就走默认的COMMON_POOL
+     *
+     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
+     */
+    @Deprecated
+    public static boolean beginWork(long timeout, ExecutorService executorService, WorkerWrapper... workerWrapper)
+            throws ExecutionException, InterruptedException {
+        if (workerWrapper == null || workerWrapper.length == 0) {
+            return false;
+        }
+        Set workerWrappers = Arrays.stream(workerWrapper).collect(Collectors.toSet());
+        //noinspection unchecked
+        return beginWork(timeout, executorService, workerWrappers);
+    }
+
+    /**
+     * 同步阻塞,直到所有都完成,或失败
+     *
+     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
+     */
+    @Deprecated
+    public static boolean beginWork(long timeout, WorkerWrapper... workerWrapper) throws ExecutionException, InterruptedException {
+        return beginWork(timeout, getCommonPool(), workerWrapper);
+    }
+
     /**
      * 关闭上次使用的线程池
      *
@@ -214,8 +293,9 @@ public class Async {
      */
     @Deprecated
     public static void shutDown() {
-        if (lastExecutorService != COMMON_POOL) {
-            shutDown(lastExecutorService);
+        final ExecutorService last = lastExecutorService.get();
+        if (last != COMMON_POOL) {
+            shutDown(last);
         }
     }
 
@@ -226,7 +306,7 @@ public class Async {
      * @deprecated 没啥用的方法，要关闭线程池还不如直接调用线程池的关闭方法，避免歧义。
      */
     @Deprecated
-    public static void shutDown(ExecutorService executorService) {
+    public static void shutDown(@Nullable ExecutorService executorService) {
         if (executorService != null) {
             executorService.shutdown();
         }

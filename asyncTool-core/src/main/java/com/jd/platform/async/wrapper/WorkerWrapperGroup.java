@@ -1,5 +1,6 @@
 package com.jd.platform.async.wrapper;
 
+import com.jd.platform.async.exception.CancelSkippedException;
 import com.jd.platform.async.executor.PollingCenter;
 
 import java.util.Collection;
@@ -8,9 +9,11 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
+import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.openutil.timer.*;
 
 /**
@@ -35,8 +38,23 @@ public class WorkerWrapperGroup {
      * 当全部wrapper都调用结束，它会countDown
      */
     private final CountDownLatch endCDL = new CountDownLatch(1);
-
+    /**
+     * 检测到超时，此标记变量将为true。
+     */
     private final AtomicBoolean anyTimeout = new AtomicBoolean(false);
+    /**
+     * 结束时间
+     */
+    private volatile long finishTime = -1L;
+    /**
+     * 取消任务状态
+     * 0 - not cancel , 1 - waiting cancel , 2 - already cancel
+     */
+    private final AtomicInteger cancelState = new AtomicInteger();
+
+    public static final int NOT_CANCEL = 0;
+    public static final int WAITING_CANCEL = 1;
+    public static final int ALREADY_CANCEL = 2;
 
     public WorkerWrapperGroup(long groupStartTime, long timeoutLength) {
         this.groupStartTime = groupStartTime;
@@ -47,7 +65,6 @@ public class WorkerWrapperGroup {
         Objects.requireNonNull(wrapper).forEach(this::addWrapper);
     }
 
-    @SuppressWarnings("unused")
     public void addWrapper(WorkerWrapper<?, ?>... wrappers) {
         for (WorkerWrapper<?, ?> wrapper : Objects.requireNonNull(wrappers)) {
             addWrapper(wrapper);
@@ -64,14 +81,33 @@ public class WorkerWrapperGroup {
         return forParamUseWrappers;
     }
 
-    /**
-     * 同步等待这组wrapper执行完成
-     *
-     * @return false代表有wrapper超时了。true代表全部wrapper没有超时。
-     */
-    public boolean awaitFinish() throws InterruptedException {
-        endCDL.await();
-        return !anyTimeout.get();
+    public CountDownLatch getEndCDL() {
+        return endCDL;
+    }
+
+    public long getGroupStartTime() {
+        return groupStartTime;
+    }
+
+    public AtomicBoolean getAnyTimeout() {
+        return anyTimeout;
+    }
+
+    public long getFinishTime() {
+        return finishTime;
+    }
+
+    public boolean isCancelled() {
+        return cancelState.get() == ALREADY_CANCEL;
+    }
+
+    public boolean isWaitingCancel() {
+        return cancelState.get() == WAITING_CANCEL;
+    }
+
+    @SuppressWarnings("UnusedReturnValue")
+    public boolean pleaseCancel() {
+        return cancelState.compareAndSet(NOT_CANCEL, WAITING_CANCEL);
     }
 
     public class CheckFinishTask implements TimerTask {
@@ -85,11 +121,19 @@ public class WorkerWrapperGroup {
             }
             AtomicBoolean hasTimeout = new AtomicBoolean(false);
             // 记录正在运行中的wrapper里，最近的限时时间。
-            AtomicLong minDaley = new AtomicLong(Long.MAX_VALUE);
+            final AtomicLong minDaley = new AtomicLong(Long.MAX_VALUE);
             final Collection<WorkerWrapper<?, ?>> values = forParamUseWrappers.values();
-            final Stream<WorkerWrapper<?, ?>> stream = values.size() > 1024 ? values.parallelStream() : values.stream();
-            boolean allFinish = stream
-                    // 处理超时
+            final Stream<WorkerWrapper<?, ?>> stream = values.size() > 128 ? values.parallelStream() : values.stream();
+            final boolean needCancel = cancelState.get() == WAITING_CANCEL;
+            boolean allFinish_and_notNeedCancel = stream
+                    // 需要取消的话就取消
+                    .peek(wrapper -> {
+                        if (needCancel) {
+                            wrapper.cancel();
+                        }
+                    })
+                    // 检查超时并保存最近一次限时时间
+                    // 当需要取消时，才会不断遍历。如果不需要取消，则计算一次(或并行流中多次)就因allMatch不满足而退出了。
                     .peek(wrapper -> {
                         // time_diff :
                         // -1  ->  already timeout ;
@@ -102,26 +146,38 @@ public class WorkerWrapperGroup {
                         if (time_diff == 0) {
                             return;
                         }
+                        // use CAS and SPIN for thread safety in parallelStream .
                         do {
                             long getMinDaley = minDaley.get();
-                            if (getMinDaley <= time_diff || minDaley.compareAndSet(getMinDaley, time_diff)) {
-                                return;
+                            // 需要设置最小时间，但是cas失败，则自旋
+                            if (getMinDaley <= time_diff && !minDaley.compareAndSet(getMinDaley, time_diff)) {
+                                continue;
                             }
+                            return;
                         } while (true);
                     })
-                    // 判断是否结束，这里如果还有未结束的wrapper则会提前结束流。
-                    .allMatch(wrapper -> wrapper.getState().finished());
+                    // 判断是否不需要取消且全部结束
+                    // 在不需要取消时，这里如果还有未结束的wrapper则会提前结束流并返回false
+                    // 在需要取消时，会全部遍历一遍并取消掉已经进入链路的wrapper
+                    .allMatch(wrapper -> !needCancel && wrapper.getState().finished());
             long getMinDaley = minDaley.get();
+            // 如果本次取消掉了任务，或是所有wrapper都已经完成
+            // ( ps : 前后两条件在这里是必定 一真一假 或 两者全假 )
+            if (needCancel || allFinish_and_notNeedCancel) {
+                // 如果这次进行了取消，则设置取消状态为已完成
+                if (needCancel) {
+                    cancelState.set(ALREADY_CANCEL);
+                }
+                anyTimeout.set(hasTimeout.get());
+                finishTime = SystemClock.now();
+                endCDL.countDown();
+            }
             // 如果有正在运行的wrapper
-            if (!allFinish) {
+            else {
                 // 如果有正在WORKING的wrapper，则计算一下限时时间，限时完成后轮询它。
                 if (getMinDaley != Long.MAX_VALUE) {
                     PollingCenter.getInstance().checkGroup(this, getMinDaley);
                 }
-            }
-            if (allFinish) {
-                anyTimeout.set(hasTimeout.get());
-                endCDL.countDown();
             }
         }
 

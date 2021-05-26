@@ -65,7 +65,7 @@ public class PollingCenter {
                     thread.setDaemon(true);
                     return thread;
                 },
-                4,
+                1,
                 TimeUnit.MILLISECONDS,
                 1024);
 

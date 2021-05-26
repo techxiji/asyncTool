@@ -45,7 +45,7 @@ class Case3 {
         // 这里用线程数较少的线程池做示例，对于ALL_DEPENDENCIES_ANY_SUCCESS“仅需一个”的效果会好一点
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            Async.beginWork(1000, pool, a);
+            Async.work(1000, pool, a).awaitFinish();
         } finally {
             pool.shutdown();
         }

@@ -2,17 +2,17 @@ package v15.cases;
 
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.executor.Async;
+import com.jd.platform.async.worker.OnceWork;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
-import com.jd.platform.async.wrapper.strategy.depend.DependenceStrategy;
 
 import java.util.concurrent.ExecutionException;
 
 /**
- * @author create by TcSnZh on 2021/5/9-下午4:34
+ * @author tcsnzh[zh.jobs@foxmail.com] create this in 2021/5/26-下午4:07
  */
-class Case8 {
+class Case10 {
     private static WorkerWrapperBuilder<?, ?> builder(String id) {
         return builder(id, -1L);
     }
@@ -43,32 +43,30 @@ class Case8 {
                                 + (success ? "success " : "fail ")
                                 + ", workResult is " + workResult);
                     }
-                }));
+                }))
+                .allowInterrupt(true);
     }
 
     /**
-     * A ==> B(10ms) ==> C(20ms)
+     * A(10ms) ==> B(10ms) ==> C(10ms)
      */
     public static void main(String[] args) throws ExecutionException, InterruptedException {
-        WorkerWrapper<?, ?> a = builder("A")
-                .nextOf(builder("B", 10)
-                        .nextOf(builder("C", 20).build())
+        final WorkerWrapper<?, ?> c;
+        final WorkerWrapper<?, ?> b;
+        final WorkerWrapper<?, ?> a = builder("A", 10)
+                .nextOf(b = builder("B", 10)
+                        .nextOf(c = builder("C", 10).build())
                         .build())
                 .build();
-        Async.work(20, a).awaitFinish();
-        /* 输出：
-        wrapper(id=A) has begin .
-            wrapper(id=A) is working
-                wrapper(id=A) callback success , workResult is WorkResult{result=null, resultState=SUCCESS, ex=null}
-        wrapper(id=B) has begin .
-            wrapper(id=B) is working
-                wrapper(id=B) callback success , workResult is WorkResult{result=null, resultState=TIMEOUT, ex=null}
-        wrapper(id=C) has begin .
-                wrapper(id=C) callback fail , workResult is WorkResult{result=null, resultState=TIMEOUT, ex=null}
-        java.lang.InterruptedException: sleep interrupted
-            at java.lang.Thread.sleep(Native Method)
-            ...
-            以下异常信息省略
-        */
+        final OnceWork onceWork = Async.work(40, a);
+        Thread.sleep(25);
+        onceWork.pleaseCancelAndAwaitFinish();
+        System.out.println("任务b信息 " + b);
+        System.out.println("任务c信息 " + c);
+        System.out.println("OnceWork信息 " + onceWork);
+        /*
+            可以看到C的state为SKIP，workResult.ex为CancelSkippedException，即被取消了。
+            不过有时程序运行慢，导致B被取消了，那么C就不会执行，其状态就为INIT了。
+         */
     }
 }

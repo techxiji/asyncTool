@@ -1,9 +1,6 @@
 package com.jd.platform.async.openutil.collection;
 
-import java.util.AbstractSet;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @author create by TcSnZh on 2021/5/16-下午11:27

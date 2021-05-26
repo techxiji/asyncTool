@@ -46,7 +46,7 @@ class Case2 {
                 .id("id:200").worker(new AddWork()).param(200).build();
         WorkerWrapper<Integer, Integer> add = WorkerWrapper.<Integer, Integer>builder().id("id:add")
                 .worker(new AddWork("id:100", "id:200")).depends(wrapper100, wrapper200).build();
-        Async.beginWork(20,wrapper100,wrapper200);
+        Async.work(20,wrapper100,wrapper200).awaitFinish();
         System.out.println(add.getWorkResult());
         // 输出WorkResult{result=300, resultState=SUCCESS, ex=null}
     }

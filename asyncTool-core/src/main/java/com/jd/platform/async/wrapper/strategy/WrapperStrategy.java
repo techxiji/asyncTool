@@ -33,7 +33,9 @@ public interface WrapperStrategy extends DependenceStrategy, SkipStrategy {
      */
     @SuppressWarnings("DeprecatedIsStillUsed")
     @Deprecated
-    DependMustStrategyMapper getDependMustStrategyMapper();
+    default DependMustStrategyMapper getDependMustStrategyMapper() {
+        return null;
+    }
 
     /**
      * 底层全局策略。

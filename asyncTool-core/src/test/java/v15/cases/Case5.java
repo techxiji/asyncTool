@@ -56,7 +56,7 @@ class Case5 {
         WorkerWrapper<?, ?> start = builder("start").nextOf(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10).build();
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            Async.beginWork(1000, pool, start);
+            Async.work(1000, pool, start).awaitFinish();
         } finally {
             pool.shutdown();
         }

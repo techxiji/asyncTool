@@ -1,5 +1,6 @@
 package com.jd.platform.async.wrapper;
 
+import com.jd.platform.async.exception.CancelSkippedException;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.callback.DefaultCallback;
@@ -32,7 +33,7 @@ import static com.jd.platform.async.wrapper.WorkerWrapper.State.STARTED;
 import static com.jd.platform.async.wrapper.WorkerWrapper.State.SUCCESS;
 import static com.jd.platform.async.wrapper.WorkerWrapper.State.WORKING;
 import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_all;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_of_checkTimeoutAllowStates;
+import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_of_beforeWorkingEnd;
 import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_of_notWorked;
 import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_of_skipOrAfterWork;
 import static com.jd.platform.async.wrapper.WorkerWrapper.State.*;
@@ -95,7 +96,6 @@ public abstract class WorkerWrapper<T, V> {
      * 也是个钩子变量，用来存临时的结果
      */
     protected final AtomicReference<WorkResult<V>> workResult = new AtomicReference<>(null);
-
 
     WorkerWrapper(String id,
                   IWorker<T, V> worker,
@@ -231,6 +231,16 @@ public abstract class WorkerWrapper<T, V> {
         } while (true);
     }
 
+    /**
+     * 直接取消wrapper运行。
+     * 如果状态在 {@link State#states_of_beforeWorkingEnd}中，则调用 {@link #fastFail(boolean, Exception, boolean)}。
+     */
+    public void cancel() {
+        if (State.setState(state, states_of_beforeWorkingEnd, SKIP, null)) {
+            fastFail(false, new CancelSkippedException(), true);
+        }
+    }
+
     public WrapperStrategy getWrapperStrategy() {
         return wrapperStrategy;
     }
@@ -298,15 +308,20 @@ public abstract class WorkerWrapper<T, V> {
             if (isState(state, BUILDING)) {
                 throw new IllegalStateException("wrapper can't work because state is BUILDING ! wrapper is " + this);
             }
-            //总的已经超时了，就快速失败，进行下一个
+            // 判断是否整组取消
+            if (group.isWaitingCancel() || group.isCancelled()) {
+                cancel();
+                return;
+            }
+            // 总的已经超时了，就快速失败，进行下一个
             if (remainTime <= 0) {
-                if (setState(state, states_of_checkTimeoutAllowStates, ERROR, null)) {
+                if (setState(state, states_of_beforeWorkingEnd, ERROR, null)) {
                     __function__fastFail_callbackResult$false_beginNext.accept(true, null);
                 }
                 return;
             }
-            //如果自己已经执行过了。
-            //可能有多个依赖，其中的一个依赖已经执行完了，并且自己也已开始执行或执行完毕。当另一个依赖执行完毕，又进来该方法时，就不重复处理了
+            // 如果自己已经执行过了。
+            // 可能有多个依赖，其中的一个依赖已经执行完了，并且自己也已开始执行或执行完毕。当另一个依赖执行完毕，又进来该方法时，就不重复处理了
             final AtomicReference<State> oldStateRef = new AtomicReference<>(null);
             if (!setState(state, states_of_notWorked, STARTED, oldStateRef::set)) {
                 return;
@@ -317,7 +332,7 @@ public abstract class WorkerWrapper<T, V> {
                     callback.begin();
                 } catch (Exception e) {
                     // callback.begin 发生异常
-                    if (setState(state, states_of_checkTimeoutAllowStates, ERROR, null)) {
+                    if (setState(state, states_of_beforeWorkingEnd, ERROR, null)) {
                         __function__fastFail_callbackResult$false_beginNext.accept(false, e);
                     }
                     return;
@@ -341,7 +356,8 @@ public abstract class WorkerWrapper<T, V> {
             }
 
             // 如果是由其他wrapper调用而运行至此，则使用策略器决定自己的行为
-            DependenceAction.WithProperty judge = wrapperStrategy.judgeAction(getDependWrappers(), this, fromWrapper);
+            DependenceAction.WithProperty judge =
+                    wrapperStrategy.judgeAction(getDependWrappers(), this, fromWrapper);
             switch (judge.getDependenceAction()) {
                 case TAKE_REST:
                     return;
@@ -360,7 +376,9 @@ public abstract class WorkerWrapper<T, V> {
                     return;
                 case JUDGE_BY_AFTER:
                 default:
-                    throw new Error("策略配置错误，不应当在WorkerWrapper中返回JUDGE_BY_AFTER或其他无效值 : this=" + this + ",fromWrapper=" + fromWrapper);
+                    throw new IllegalStateException(
+                            "策略配置错误，不应当在WorkerWrapper中返回JUDGE_BY_AFTER或其他无效值 : this=" + this +
+                                    ",fromWrapper=" + fromWrapper);
             }
         } catch (Exception e) {
             // wrapper本身抛出了不该有的异常
@@ -389,7 +407,6 @@ public abstract class WorkerWrapper<T, V> {
         } finally {
             doWorkingThread.set(null);
         }
-
     }
 
     /**
@@ -457,8 +474,6 @@ public abstract class WorkerWrapper<T, V> {
         }
 
     }
-
-    // ========== private ==========
 
     // ========== hashcode and equals ==========
 
@@ -645,7 +660,7 @@ public abstract class WorkerWrapper<T, V> {
 
         static final State[] states_of_skipOrAfterWork = new State[]{SKIP, AFTER_WORK};
 
-        static final State[] states_of_checkTimeoutAllowStates = new State[]{INIT, STARTED, WORKING};
+        static final State[] states_of_beforeWorkingEnd = new State[]{INIT, STARTED, WORKING};
 
         static final State[] states_all = new State[]{BUILDING, INIT, STARTED, WORKING, AFTER_WORK, SUCCESS, ERROR, SKIP};
 

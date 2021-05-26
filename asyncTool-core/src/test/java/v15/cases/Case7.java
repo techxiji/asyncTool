@@ -50,7 +50,7 @@ class Case7 {
                                 .build(),
                         builder("E", 5).nextOf(d).build()
                 ).build();
-        Async.beginWork(1000, a);
+        Async.work(1000, a).awaitFinish();
         /* 输出：
         wrapper(id=A) is working
         wrapper(id=E) is working

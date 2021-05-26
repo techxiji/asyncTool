@@ -10,7 +10,7 @@ import java.util.Arrays;
  *
  * @author create by TcSnZh on 2021/5/16-下午11:25
  */
-public class TestGraph {
+class TestGraph {
     public static void main(String[] args) {
         test_CommonDirectedGraph();
     }

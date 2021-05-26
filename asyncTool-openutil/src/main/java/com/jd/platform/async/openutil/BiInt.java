@@ -3,7 +3,7 @@ package com.jd.platform.async.openutil;
 import java.util.Comparator;
 
 /**
- * 两个int值。重写了{@link #hashCode()}与{@link #equals(Object)}
+ * 两个int值包装类。重写了{@link #hashCode()}与{@link #equals(Object)}
  *
  * @author create by TcSnZh on 2021/5/16-上午1:50
  */
