@@ -4,6 +4,8 @@
 
 代码不多，直接拷贝包过去即可。
 
+#### 旧稳定版本v1.4
+
 京东同事通过引用如下maven来使用。
 
 ```xml
@@ -34,11 +36,49 @@
 </dependency>
 ```
 
-# 使用说明
+#### 最新版本v1.5（不稳定）
+
+
+
+从gitee上下载仓库到本地，切换到`dev`分支，然后maven安装到本地仓库。
+
+```bash
+git clone https://gitee.com/jd-platform-opensource/asyncTool.git
+cd ./asyncTool
+git checkout dev
+mvn install
+```
+
+在项目中引入依赖。
+
+```xml
+<!-- 任务编排核心包 -->
+<dependency>
+    <artifactId>asyncTool-core</artifactId>
+    <groupId>com.jd.platform</groupId>
+    <version>1.5.1-SNAPSHOT</version>
+</dependency>
+```
+
+# 任务编排
+
+> `asyncTool-core`核心模块提供了核心功能——任务编排
+>
+> 以下文档基于版本：
+>
+> ```xml
+> <dependencies>
+>        <dependency>
+>            <groupId>com.jd.platform</groupId>
+>            <artifactId>asyncTool-core</artifactId>
+>            <version>1.5.1-SNAPSHOT</version>
+>        </dependency>
+> </dependencies>
+> ```
 
 ### 基本组件
 
-worker：  一个最小的任务执行单元。通常是一个网络调用，或一段耗时操作。
+`IWorker`：  一个最小的任务执行单元。通常是一个网络调用，或一段耗时操作。
 
 T，V两个泛型，分别是入参和出参类型。
 
@@ -63,7 +103,7 @@ public interface IWorker<T, V> {
     V action(T object, Map<String, WorkerWrapper> allWrappers);
 
     /**
-     * 超时、异常时，返回的默认值
+     * 超时、异常、跳过时，返回的默认值
      *
      * @return 默认值
      */
@@ -73,8 +113,7 @@ public interface IWorker<T, V> {
 }
 ```
 
-
-callBack：对每个worker的回调。worker执行完毕后，会回调该接口，带着执行成功、失败、原始入参、和详细的结果。
+`ICallback`：对每个worker的回调。worker执行完毕后，会回调该接口，带着执行成功、失败、原始入参、和详细的结果。
 
 ```java
 /**
@@ -117,6 +156,85 @@ WorkerWrapper<String, String> w0 = WorkerWrapper.<String, String>builder()
 
 通过这一个类看一下，action里就是你的耗时操作，begin就是任务开始执行时的回调，result就是worker执行完毕后的回调。当你组合了多个执行单元时，每一步的执行，都在掌控之内。失败了，还会有自定义的默认值。这是CompleteableFuture无法做到的。
 
+### 如何构造WorkerWrapper?
+
+##### 推荐Builder模式
+
+如果刚开始使用这个框架，则推荐使用如下方式进行构造：
+
+```java
+WorkerWrapper.<String, String>builder()
+    .id()
+    // 其他属性略。
+    // 请在《简单示例》与《设置WorkerWrapper属性》中慢慢感受详细内容。
+    // 因为这里地方小，写不下。
+```
+
+##### 复杂的快速构造
+
+> 不推荐新手使用。
+>
+> 不推荐在业务中使用，使用Builder模式代码更加简洁，且会检查参数，不必节省这些性能。
+>
+> 该对象的构造方法不会检查属性。
+
+在对WorkerWrapper属性有充足了解后，可使用“直接设置属性 + 关系图”的方式快速构造wrapper。
+
+建议在扩展功能的时候使用该构造器，以提高效率。但是请记得检查参数。
+
+以下为示例：
+
+```java
+class Case9 {
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+        DirectedGraph<WorkerWrapper<?, ?>, Object> graph = DirectedGraph.synchronizedDigraph(new CommonDirectedGraph<>());
+        QuickBuildWorkerWrapper<Object, Object> w1 = new QuickBuildWorkerWrapper<>("id1",
+                null,
+                (object, allWrappers) -> {
+                    System.out.println("I am IWorker 1");
+                    return null;
+                },
+                new DefaultCallback<>(),
+                false,
+                true,
+                100,
+                TimeUnit.MILLISECONDS,
+                new WrapperStrategy.DefaultWrapperStrategy(),
+                graph
+        );
+        QuickBuildWorkerWrapper<Object, Object> w2 = new QuickBuildWorkerWrapper<>("id2",
+                null,
+                (object, allWrappers) -> {
+                    System.out.println("I am IWorker 2");
+                    return null;
+                },
+                new DefaultCallback<>(),
+                false,
+                true,
+                100,
+                TimeUnit.MILLISECONDS,
+                new WrapperStrategy.DefaultWrapperStrategy(),
+                graph
+        );
+        graph.addNode(w1, w2);
+        graph.putRelation(w1, new Object(), w2);
+
+//        System.out.println(graph);
+
+        Async.work(200, w1).awaitFinish();
+
+        System.out.println("    Begin work end .\n    w1 : " + w1 + "\n    w2 : " + w2 + "\n");
+        /* 输出：
+        I am IWorker 1
+        I am IWorker 2
+            Begin work end .
+            w1 : 省略
+            w2 : 省略
+         */
+    }
+}
+```
+
 ### 简单示例
 
 1.  3个任务并行
@@ -124,7 +242,7 @@ WorkerWrapper<String, String> w0 = WorkerWrapper.<String, String>builder()
 ![输入图片说明](https://images.gitee.com/uploads/images/2019/1226/140256_8c015621_303698.png "屏幕截图.png")
 
 ```java
-class Test {
+class Case0 {
     static WorkerWrapperBuilder<?, ?> builder(String id) {
         return WorkerWrapper.<String, String>builder()
                 .id(id)
@@ -139,15 +257,15 @@ class Test {
         WorkerWrapper<?, ?> b = builder("B").build();
         WorkerWrapper<?, ?> c = builder("C").build();
         try {
-            Async.beginWork(100, a, b, c);
-        } catch (ExecutionException | InterruptedException e) {
+            Async.work(100, a, b, c).awaitFinish();
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
         /* 输出:
         wrapper(id=A) is working
         wrapper(id=B) is working
         wrapper(id=C) is working
-        */
+         */
     }
 }
 ```
@@ -158,7 +276,7 @@ class Test {
 ![输入图片说明](https://images.gitee.com/uploads/images/2019/1226/140405_93800bc7_303698.png "屏幕截图.png")
 
 ```java
-class Test {
+class Case01 {
     static WorkerWrapperBuilder<?, ?> builder(String id) {
         return WorkerWrapper.<String, String>builder()
                 .id(id)
@@ -174,8 +292,8 @@ class Test {
         WorkerWrapper<?, ?> c = builder("C").depends(a).build();
         WorkerWrapper<?, ?> f = builder("F").depends(b, c).build();
         try {
-            Async.beginWork(100, a);
-        } catch (ExecutionException | InterruptedException e) {
+            Async.work(100, a).awaitFinish();
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
         /* 输出:
@@ -191,7 +309,7 @@ class Test {
 如果觉得`.depneds()`方法的排序您不喜欢，也可以用`.nextOf()`这种方式：
 
 ```java
-class Test {
+class Case02 {
     static WorkerWrapperBuilder<?, ?> builder(String id) {
         return WorkerWrapper.<String, String>builder()
                 .id(id)
@@ -208,8 +326,8 @@ class Test {
                 .nextOf(builder("C").nextOf(f).build())
                 .build();
         try {
-            Async.beginWork(100, a);
-        } catch (ExecutionException | InterruptedException e) {
+            Async.work(100, a).awaitFinish();
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
         /* 输出:
@@ -261,8 +379,8 @@ class Case1 {
                 )
                 .build();
         try {
-            Async.beginWork(1000, a, d);
-        } catch (ExecutionException | InterruptedException e) {
+            Async.work(1000, a, d).awaitFinish();
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
         /* 输出:
@@ -320,7 +438,7 @@ class Case2 {
                 .id("id:200").worker(new AddWork()).param(200).build();
         WorkerWrapper<Integer, Integer> add = WorkerWrapper.<Integer, Integer>builder().id("id:add")
                 .worker(new AddWork("id:100", "id:200")).depends(wrapper100, wrapper200).build();
-        Async.beginWork(20,wrapper100,wrapper200);
+        Async.work(20,wrapper100,wrapper200).awaitFinish();
         System.out.println(add.getWorkResult());
         // 输出WorkResult{result=300, resultState=SUCCESS, ex=null}
     }
@@ -334,11 +452,16 @@ class Case2 {
 `Async`工具类有多个方法可以使用自定义线程池
 
 ```java
-public static boolean beginWork(long timeout,
+public static OnceWork work(long timeout,
                                     ExecutorService executorService,
                                     Collection<? extends WorkerWrapper<?,?>> workerWrappers);
     
-public static boolean beginWork(long timeout, ExecutorService executorService, WorkerWrapper... workerWrapper);
+public static OnceWork work(long timeout, ExecutorService executorService, WorkerWrapper... workerWrapper);
+
+public static OnceWork work(long timeout,
+                                ExecutorService executorService,
+                                Collection<? extends WorkerWrapper<?, ?>> workerWrappers,
+                                String workId);
 ```
 
 另外，如果没有指定线程池，默认会使用`COMMON_POOL`，您可以调用这些方法获得/关闭此线程池：
@@ -353,18 +476,16 @@ public static ThreadPoolExecutor getCommonPool();
 
 /**
  * @param now 是否立即关闭
- * @throws IllegalStateException 如果尚未调用过{@link #getCommonPool()}，即没有使用过“使用默认线程池”的方法，该方法会抛出空指针异常。
+ * @return 如果尚未调用过{@link #getCommonPool()}，即没有初始化默认线程池，返回false。否则返回true。
  */
-public static synchronized void shutDownCommonPool(boolean now);
+public static synchronized boolean shutDownCommonPool(boolean now);
 ```
 
 以下是一个使用自定义线程池的简单代码示例：
 
 ```java
-Async.beginWork(1000, Executors.newFixedThreadPool(2),a);
+Async.work(1000, Executors.newFixedThreadPool(2),a).awaitFinish();
 ```
-
-
 
 ## WorkerWrapper基本属性
 
@@ -381,9 +502,116 @@ WorkerWrapper会在这些情况被运行：
 
 > processOn流程图文件放在同仓库。
 
-### 其他属性
+### 属性
 
+#### id
 
+`WorkerWrapper`的id属性非常重要。
+
+可在builder的该属性设置id，如果不设置，默认使用UUID。
+
+```java
+public interface WorkerWrapperBuilder<T, V> {
+    /**
+     * 设置唯一id。
+     * 如果不设置，{@link StableWorkerWrapperBuilder}会使用UUID
+     */
+    WorkerWrapperBuilder<T, V> id(String id);
+    
+    // 略
+}
+```
+
+例如如果你需要在`IWorker`中调用上游wrapper，则可以根据id来获取到。
+
+> 该map的键即为`WorkerWrapper`的id。
+
+```java
+V action(T object, Map<String, WorkerWrapper<?,?>> allWrappers);
+```
+
+请程序员确保在一次任务执行的一组wrapper中，id不会重复。在执行过程中不会进行检查。
+
+#### 其他省略
+
+> 其他属性都写在源码注释中，可下载源码慢慢查看。
+
+## `OnceWork`任务句柄详解
+
+`Async.work(...)`方法的返回值为`OnceWork`句柄。
+
+> 源码里有大量的注释，直接看源码效率更高
+
+#### 需要同步等待完成
+
+`OnceWork`被返回后，任务并没有同步完成，而是还在运行。
+
+如果我们需要同步完成，则调用`awaitFinish`方法即可同步等待。
+
+#### 取消任务
+
+调用`pleaseCancel`方法可取消任务，以下为示例：
+
+```java
+class Case10 {
+    private static WorkerWrapperBuilder<?, ?> builder(String id) {
+        return builder(id, -1L);
+    }
+
+    private static WorkerWrapperBuilder<?, ?> builder(String id, long sleepTime) {
+        return WorkerWrapper.<String, String>builder()
+                .id(id)
+                .worker((param, allWrappers) -> {
+                    System.out.println("\twrapper(id=" + id + ") is working");
+                    if (sleepTime > 0) {
+                        try {
+                            Thread.sleep(sleepTime);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    return null;
+                })
+                .callback((new ICallback<String, String>() {
+                    @Override
+                    public void begin() {
+                        System.out.println("wrapper(id=" + id + ") has begin . ");
+                    }
+
+                    @Override
+                    public void result(boolean success, String param, WorkResult<String> workResult) {
+                        System.out.println("\t\twrapper(id=" + id + ") callback "
+                                + (success ? "success " : "fail ")
+                                + ", workResult is " + workResult);
+                    }
+                }))
+                .allowInterrupt(true);
+    }
+
+    /**
+     * A(10ms) ==> B(10ms) ==> C(10ms)
+     */
+    public static void main(String[] args) throws ExecutionException, InterruptedException {
+        final WorkerWrapper<?, ?> c;
+        final WorkerWrapper<?, ?> b;
+        final WorkerWrapper<?, ?> a = builder("A", 10)
+                .nextOf(b = builder("B", 10)
+                        .nextOf(c = builder("C", 10).build())
+                        .build())
+                .build();
+        final OnceWork onceWork = Async.work(40, a);
+        Thread.sleep(25);
+        onceWork.pleaseCancelAndAwaitFinish();
+        System.out.println("任务b信息 " + b);
+        System.out.println("任务c信息 " + c);
+        System.out.println("OnceWork信息 " + onceWork);
+        /*
+            可以看到C的state为SKIP，workResult.ex为CancelSkippedException，即被取消了。
+            不过有时程序运行慢，导致B被取消了，那么C就不会执行，其状态就为INIT了。
+         */
+    }
+}
+```
 
 ## 设置WorkerWrapper属性
 
@@ -455,7 +683,7 @@ class Case3 {
         // 这里用线程数较少的线程池做示例，对于ALL_DEPENDENCIES_ANY_SUCCESS“仅需一个”的效果会好一点
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            Async.beginWork(1000, pool, a);
+            Async.work(1000, pool, a).awaitFinish();
         } finally {
             pool.shutdown();
         }
@@ -466,6 +694,8 @@ class Case3 {
 		wrapper(id=B2) is working
 		wrapper(id=C2) is working
 		wrapper(id=C1) is working
+		wrapper(id=B4) is working
+		// 我们看到B5被跳过了，没有执行callback
 		*/
     }
 }
@@ -531,62 +761,76 @@ public enum DependenceAction {
 | `FAST_FAIL`      | 立即失败。WorkerWrapper会去执行快速失败的方法。              |
 | `JUDGE_BY_AFTER` | 交给下层`{@link DependenceStrategy}`进行判断。 由于`{@link DependenceStrategy#thenJudge(DependenceStrategy)}`的责任链设计模式，该返回值的意义就是调用责任链上下一个策略。 |
 
+> 如果wrapper被跳过，ResultState将为`DEFAULT`。
+>
+> 
+
 ##### 策略器组件默认实现
 
 * `DependenceStrategy.ALL_DEPENDENCIES_ALL_SUCCESS`，该值为默认值，若builder未设置则默认使用这个。
   1. 被依赖的所有Wrapper都必须成功才能开始工作。
   2. 如果其中任一Wrapper还没有执行且不存在失败，则休息。
-  3. 如果其中任一Wrapper失败则立即失败。
+  3. 如果其中任一Wrapper失败则立即失败。*（跳过不算失败）*
 * `DependenceStrategy.ALL_DEPENDENCIES_ANY_SUCCESS`
   1. 被依赖的Wrapper中任意一个成功了就可以开始工作。
   2. 如果其中所有Wrapper还没有执行，则休息。
-  3. 如果其中一个Wrapper失败且不存在成功则立即失败。
+  3. 如果其中一个Wrapper失败且不存在成功则立即失败。*（跳过不算失败）*
 * `DependenceStrategy.ALL_DEPENDENCIES_NONE_FAILED`
-  *   如果被依赖的工作中任一失败，则立即失败。否则就开始工作（不论之前的工作有没有开始）。
+  *   如果被依赖的工作中任一失败，则立即失败。*（跳过不算失败）*
+  *   否则就开始工作（不论之前的工作有没有开始）。
 * `DependenceStrategy.theseWrapperAllSuccess(Set<WorkerWrapper<?,?>>)`
   *   该方法传入一个`Set`指定wrapper，只有当指定的这些Wrapper都成功时，才会开始工作。任一失败会快速失败。任一还没有执行且不存在失败，则休息。
 * 不建议使用：~~`DependenceStrategy.IF_MUST_SET_NOT_EMPTY_ALL_SUCCESS_ELSE_ANY`~~
   * 此值用于适配v1.4及之前的must开关模式，当`wrapperStrategy`的`dependMustStrategyMapper`的`mustDependSet`不为空时，则休息（因为能判断到这个责任链说明set中存在不满足的值）。为空时，则任一成功则执行。
 
-##### `WorkerWrapper`的三层策略器责任链
+##### `WorkerWrapper`的策略器责任链
 
-`WorkerWrapper`在判断时，并不是只使用一个策略进行判断的，而是在`WorkerWrapper.WrapperStrategy`进行了最多三层的判断：
+`WorkerWrapper`在判断时，并不是只使用一个策略进行判断的，而是在`WrapperStrategy`进行了最多三层的判断：
 
 ```java
-public abstract class WorkerWrapper<T, V> {
-    
-    // 略
-    
-	public static class WrapperStrategy implements DependenceStrategy, SkipStrategy {
-    	// ========== 这三个策略器用于链式判断是否要开始工作 ==========
+public interface WrapperStrategy extends DependenceStrategy, SkipStrategy {
+    // ========== 这三个策略器用于链式判断是否要开始工作 ==========
 
-        // 从前往后依次判断的顺序为 dependWrapperStrategyMapper -> dependMustStrategyMapper -> dependenceStrategy
+    // 从前往后依次判断的顺序为 dependWrapperStrategyMapper -> dependMustStrategyMapper -> dependenceStrategy
 
-        /**
-         * 对特殊Wrapper专用的依赖响应策略。
-         * <b>该值允许为null</b>
-         */
-        private DependWrapperStrategyMapper dependWrapperStrategyMapper;
-        /**
-         * 对必须完成的（must的）Wrapper的依赖响应策略。
-         * <b>该值允许为null</b>
-         * <p/>
-         * 这是一个不得不向历史妥协的属性。用于适配must开关方式。
-         */
-        private DependMustStrategyMapper dependMustStrategyMapper;
-        /**
-         * 底层全局策略。
-         */
-        private DependenceStrategy dependenceStrategy;
- 
-    	// 略
-	}
+    /**
+     * 设置对特殊Wrapper专用的依赖响应策略。
+     *
+     * @return 该值允许为null
+     */
+    DependOnUpWrapperStrategyMapper getDependWrapperStrategyMapper();
+
+    /**
+     * 对必须完成的（must的）Wrapper的依赖响应策略。
+     * 这是一个不得不向历史妥协的属性。用于适配must开关方式。
+     *
+     * @return 该值允许为null
+     */
+    DependMustStrategyMapper getDependMustStrategyMapper();
+
+    /**
+     * 底层全局策略。
+     *
+     * @return 该值不允许为null
+     */
+    DependenceStrategy getDependenceStrategy();
+
+    // ========== 这是跳过策略 ==========
+
+    /**
+     * 跳过策略
+     *
+     * @return 不允许为null
+     */
+    SkipStrategy getSkipStrategy();
+    
+    // 其他属性略，自行查看源码即可
 }
 ```
 
-正如注释所言，三个策略器将依次调用`DependenceStrategy.judgeAction(Set,WorkerWrapper,WorkerWrapper)`方法进行判断，每次判断会返回`DependenceAction.WithProperty`类型。
+正如注释所言，三个策略器将依次调用`judgeAction(Set,WorkerWrapper,WorkerWrapper)`方法进行判断，每次判断会返回`DependenceAction.WithProperty`类型。
 
-前两个策略器的返回值，即`DependenceAction.WithProperty`类型，若调用`getDependenceAction()`方法返回的枚举值不为`JUDGE_BY_AFTER`时，整个三层责任链将返回此返回值；若为`JUDGE_BY_AFTER`，则交给下个策略器进行判断。该方法具体由以下方法实现：
+前两个策略器的返回值若不为枚举`JUDGE_BY_AFTER`的内部类时，整个三层责任链将返回此返回值；若为`JUDGE_BY_AFTER`，则交给下个策略器进行判断。该方法具体由以下方法实现：
 
 ```java
 public interface DependenceStrategy {
@@ -670,7 +914,7 @@ class Case4 {
         }
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            Async.beginWork(1000, pool, a);
+            Async.work(1000, pool, a).awaitFinish();
         } finally {
             pool.shutdown();
         }
@@ -759,7 +1003,7 @@ class Case5 {
         WorkerWrapper<?, ?> start = builder("start").nextOf(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10).build();
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            Async.beginWork(1000, pool, start);
+            Async.work(1000, pool, start).awaitFinish();
         } finally {
             pool.shutdown();
         }
@@ -788,74 +1032,51 @@ class Case5 {
 
 那么，能不能让上游wrapper根据自己的状态独自决定下游wrapper响应呢？
 
-因此，三层策略器的`DependWrapperStrategyMapper`便是用于设置此功能的。
+可以。`DependOnUpWrapperStrategy`函数式接口  与    `DependOnUpWrapperStrategyMapper`这两个类即可完成这个功能。
 
 ```java
-// 示例版本v1.5
-
 /**
- * 对不同的{@link WorkerWrapper}调用者实行个性化依赖响应策略。
- * <p/>
- * 使用{@link DependWrapperStrategyMapper}本实现类对{@link DependenceStrategy}进行增强，
+ * 由上游wrapper决定本wrapper行为的单参数策略。
  *
- * @author create by TcSnZh on 2021/5/1-下午11:12
+ * @author create by TcSnZh on 2021/5/1-下午11:16
  */
-public class DependWrapperStrategyMapper implements DependenceStrategy {
-    private final Map<WorkerWrapper<?, ?>, DependWrapperActionStrategy> mapper = new ConcurrentHashMap<>(4);
-
-    /**
-     * 设置对应策略
-     *
-     * @param targetWrapper 要设置策略的WorkerWrapper
-     * @param strategy      要设置的策略
-     * @return 返回this，链式调用。
-     */
-    public DependWrapperStrategyMapper putMapping(WorkerWrapper<?, ?> targetWrapper, DependWrapperActionStrategy strategy) {/* 略 */}
-
-    /**
-     * 判断方法。
-     * <p/>
-     * 如果fromWrapper在{@link #mapper}中，则返回{@link DependWrapperActionStrategy}的判断返回值。否则返回{@link DependenceAction#JUDGE_BY_AFTER}
-     *
-     * @param dependWrappers （这里不会使用该值）thisWrapper.dependWrappers的属性值。
-     * @param thisWrapper    （这里不会使用该值）thisWrapper，即为“被催促”的WorkerWrapper
-     * @param fromWrapper    调用来源Wrapper。
-     * @return 如果在mapper中有对fromWrapper的处理策略，则使用其进行判断。否则返回JUDGE_BY_AFTER交给下一个进行判断。
-     */
-    @Override
-    public DependenceAction.WithProperty judgeAction(
-        Set<WorkerWrapper<?,?>> dependWrappers,
-        WorkerWrapper<?, ?> thisWrapper,
-        WorkerWrapper<?, ?> fromWrapper // 仅判断该属性
-    ) {/* 略 */}
-
-    // 略
-}
-```
-
-其`mapper`属性中，每个`WorkerWrapper<?, ?>`对应了一个`DependWrapperActionStrategy`，这个接口便是用于让上游wrapper决定下游响应的：
-
-```java
 @FunctionalInterface
-public interface DependWrapperActionStrategy {
+public interface DependOnUpWrapperStrategy {
     /**
-     * 仅使用一个参数的判断方法
+     * 仅使用一个参数（即调用自身的上游wrapper）的判断方法
      *
      * @param fromWrapper 调用本Wrapper的上游Wrapper
      * @return 返回 {@link DependenceAction.WithProperty}
      */
     DependenceAction.WithProperty judge(WorkerWrapper<?, ?> fromWrapper);
-    
-    // 常量略
+
+    // ========== 送几个供链式调用的默认值 ==========
+
+    /**
+     * 成功时，交给下一个策略器判断。
+     * 未运行时，休息。
+     * 失败时，失败。
+     */
+    DependOnUpWrapperStrategy SUCCESS_CONTINUE = /*略*/ ;
+    /**
+     * 成功时，开始工作。
+     * 未运行时，交给下一个策略器判断。
+     * 失败时，失败。
+     */
+    DependOnUpWrapperStrategy SUCCESS_START_INIT_CONTINUE = /*略*/ ;
 }
 ```
 
-###### 提供常量
+在`DependOnUpWrapperStrategyMapper`的`mapper`属性中，每个`WorkerWrapper<?, ?>`对应了一个`DependOnUpWrapperStrategy`，实现了让wrapper对不同的上游做出不同的响应策略。
 
-* `DependWrapperActionStrategy.SUCCESS_CONTINUE`
-  * 成功时，交给下一个策略器判断。未运行时，休息。失败时，失败。
-* `DependWrapperActionStrategy SUCCESS_START_INIT_CONTINUE`
-  * 成功时，开始工作。未运行时，交给下一个策略器判断。失败时，失败。
+```java
+public class DependOnUpWrapperStrategyMapper implements DependenceStrategy {
+    private final Map<WorkerWrapper<?, ?>, DependOnUpWrapperStrategy> mapper = new ConcurrentHashMap<>(4);
+	// 以下略   
+}
+```
+
+在《`WorkerWrapper`的三层策略器责任链》这一章中，我们可以看到，第一层策略器就是此`DependOnUpWrapperStrategyMapper`。
 
 ###### 简单使用与示例
 
@@ -892,34 +1113,35 @@ SetNext<T, V> specialToNextWrapper(DependWrapperActionStrategy strategy, WorkerW
 class Case6 {
     private static WorkerWrapperBuilder<?, ?> builder(String id) {
         return WorkerWrapper.<String, String>builder()
-                .id(id)
-                .worker((param, allWrappers) -> {
-                    System.out.println("wrapper(id=" + id + ") is working");
-                    try {
-                        Thread.sleep(50);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    return null;
-                });
+            .id(id)
+            .worker((param, allWrappers) -> {
+                System.out.println("wrapper(id=" + id + ") is working");
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                return null;
+            });
     }
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
         WorkerWrapper<?, ?> b = builder("B")
-                // 这里设置了，不论a怎么样b都会快速失败。但是，a设置的对wrapper的特殊策略把它覆盖了。
-                .depends((dependWrappers, thisWrapper, fromWrapper) ->
-                        DependenceAction.FAST_FAIL
-                                .fastFailException(ResultState.EXCEPTION, new RuntimeException("b 必定失败，除非有上游wrapper救他"))
-                )
-                .build();
+            // 这里设置了，不论a怎么样b都会快速失败。但是，a设置的对wrapper的特殊策略把它覆盖了。
+            .depends((dependWrappers, thisWrapper, fromWrapper) ->
+                     DependenceAction.FAST_FAIL
+                     .fastFailException(ResultState.EXCEPTION, new RuntimeException("b 必定失败，除非有上游wrapper救他"))
+                    )
+            .callback(ICallback.PRINT_EXCEPTION_STACK_TRACE)
+            .build();
         WorkerWrapper<?, ?> a = builder("A")
-                .setNext()
-                // a将会使b直接开始工作
-                // 若是去掉这行代码，则b会失败
-                .specialToNextWrapper(fromWrapper -> DependenceAction.START_WORK.emptyProperty(), b)
-                .wrapper(b)
-                .end().build();
-        Async.beginWork(1000, a);
+            .setNext()
+            // a将会使b直接开始工作
+            // 若是去掉这行代码，则b会失败
+            .specialToNextWrapper(fromWrapper -> DependenceAction.START_WORK.emptyProperty(), b)
+            .wrapper(b)
+            .end().build();
+        Async.work(1000, a).awaitFinish();
         System.out.println(a.getWorkResult());
         System.out.println(b.getWorkResult());
         /* 输出：
@@ -932,7 +1154,12 @@ class Case6 {
 }
 ```
 
+###### 提供常量
 
+* `DependWrapperActionStrategy.SUCCESS_CONTINUE`
+  * 成功时，交给下一个策略器判断。未运行时，休息。失败时，失败。
+* `DependWrapperActionStrategy SUCCESS_START_INIT_CONTINUE`
+  * 成功时，开始工作。未运行时，交给下一个策略器判断。失败时，失败。
 
 ### 设置跳过策略
 
@@ -943,8 +1170,9 @@ class Case6 {
 ```json
 {
     result: null,
-    resultState: ResultState.EXCEPTION,
-    ex: com.jd.platform.async.exception.SkippedException
+    // 注意：如果wrapper被跳过，ResultState将为DEFAULT
+    resultState: "ResultState.DEFAULT",
+    ex: "com.jd.platform.async.exception.SkippedException"
 }
 ```
 
@@ -1018,7 +1246,7 @@ class Case7 {
                                 .build(),
                         builder("E", 5).nextOf(d).build()
                 ).build();
-        Async.beginWork(1000, a);
+        Async.work(1000, a).awaitFinish();
         /* 输出：
         wrapper(id=A) is working
         wrapper(id=E) is working
@@ -1139,7 +1367,7 @@ class Case8 {
                         .nextOf(builder("C", 20).build())
                         .build())
                 .build();
-        Async.beginWork(15, a);
+        Async.work(20, a).awaitFinish();
         /* 输出：
         wrapper(id=A) has begin .
             wrapper(id=A) is working
@@ -1151,13 +1379,12 @@ class Case8 {
                 wrapper(id=C) callback fail , workResult is WorkResult{result=null, resultState=TIMEOUT, ex=null}
         java.lang.InterruptedException: sleep interrupted
             at java.lang.Thread.sleep(Native Method)
+            ...
             以下异常信息省略
         */
     }
 }
 ```
-
-
 
 ### 设置是否允许被打断线程
 
@@ -1178,15 +1405,50 @@ public interface WorkerWrapperBuilder<T, V> {
 }
 ```
 
+#### 线程会被打断的具体情况
+
 开启之后，在以下情况，会试图打断正处于WORKING状态的工作线程。
 
 * 总任务超时，但本wrapper在WORKING。
 * 单wrapper超时，但本wrapper在WORKING。
 * wrapper应当被跳过，但本wrapper在WORKING。
-
 * 调用`WorkerWrapper#failNow()`方法，且wrapper在WORKING状态。
 
-### 
+# 开放工具类
 
+> `asyncTool-openutil`工具模块提供了一些便于开发的工具类。
+>
+> 可单独引入依赖：
+>
+> ```xml
+> <dependencies>
+>     <dependency>
+>         <groupId>com.jd.platform</groupId>
+>         <artifactId>asyncTool-openutil</artifactId>
+>         <version>1.5.1-SNAPSHOT</version>
+>     </dependency>
+> </dependencies>
+> ```
 
+### 集合类
+
+> 普通集合包`com.jd.platform.async.openutil.collection.*`
+
+这里不详述，要用的话源码里有注释。
+
+* `SparseArray2D` 稀疏矩阵。
+* `CommonDirectedGraph` 有向图。
+* `CommonStoreArk`  id储物柜。
+
+### 定时器
+
+> `com.jd.platform.async.openutil.timer.*`
+
+* `HashedWheelTimer`  从netty里抄来的时间轮工具类。
+
+### 其他
+
+> `com.jd.platform.async.openutil.*`
+
+* `BiInt`  一个表示两个int值的实体类，内含缓冲区间、默认比较器，适合拿来当2维索引。
 
