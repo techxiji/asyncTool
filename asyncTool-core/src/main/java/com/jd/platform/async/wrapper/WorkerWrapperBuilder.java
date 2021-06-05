@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @author create by TcSnZh on 2021/5/4-下午1:26
  */
+@SuppressWarnings("unused")
 public interface WorkerWrapperBuilder<T, V> {
     /**
      * 设置唯一id。
@@ -56,6 +57,7 @@ public interface WorkerWrapperBuilder<T, V> {
      */
     SetDepend<T, V> setDepend();
 
+    @SuppressWarnings({"UnusedReturnValue"})
     interface SetDepend<T, V> {
         /**
          * 设置在本Wrapper之前的上游Wrapper。
@@ -112,10 +114,8 @@ public interface WorkerWrapperBuilder<T, V> {
          * @param wrapper  需要设置特殊策略的Wrapper。
          * @param strategy 特殊策略。
          */
-        @SuppressWarnings("UnusedReturnValue")
         SetDepend<T, V> specialDependWrapper(DependOnUpWrapperStrategy strategy, WorkerWrapper<?, ?> wrapper);
 
-        @SuppressWarnings("unused")
         default SetDepend<T, V> specialDependWrapper(DependOnUpWrapperStrategy strategy, WorkerWrapper... wrappers) {
             if (strategy == null || wrappers == null) {
                 return this;
@@ -158,7 +158,6 @@ public interface WorkerWrapperBuilder<T, V> {
         return setDepend().wrapper(wrappers).end();
     }
 
-    @SuppressWarnings("unused")
     default WorkerWrapperBuilder<T, V> depends(Collection<WorkerWrapper> wrappers) {
         return setDepend().wrapper(wrappers).end();
     }
@@ -167,7 +166,6 @@ public interface WorkerWrapperBuilder<T, V> {
         return setDepend().wrapper(wrappers).strategy(strategy).end();
     }
 
-    @SuppressWarnings("unused")
     default WorkerWrapperBuilder<T, V> depends(DependenceStrategy strategy, Collection<WorkerWrapper> wrappers) {
         return setDepend().wrapper(wrappers).strategy(strategy).end();
     }
@@ -208,7 +206,6 @@ public interface WorkerWrapperBuilder<T, V> {
          */
         SetNext<T, V> mustToNextWrapper(WorkerWrapper<?, ?> wrapper);
 
-        @SuppressWarnings("unused")
         default SetNext<T, V> requireToNextWrapper(WorkerWrapper<?, ?> wrapper, boolean must) {
             return must ? mustToNextWrapper(wrapper) : wrapper(wrapper);
         }
@@ -234,7 +231,6 @@ public interface WorkerWrapperBuilder<T, V> {
         return setNext().wrapper(wrappers).end();
     }
 
-    @SuppressWarnings("unused")
     default WorkerWrapperBuilder<T, V> nextOf(Collection<WorkerWrapper> wrappers) {
         return setNext().wrapper(wrappers).end();
     }

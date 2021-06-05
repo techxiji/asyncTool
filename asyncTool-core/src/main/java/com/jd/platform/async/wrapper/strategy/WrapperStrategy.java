@@ -8,6 +8,7 @@ import com.jd.platform.async.wrapper.strategy.depend.DependenceStrategy;
 import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
 
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author create by TcSnZh on 2021/5/17-下午6:23
@@ -99,12 +100,33 @@ public interface WrapperStrategy extends DependenceStrategy, SkipStrategy {
     abstract class AbstractWrapperStrategy implements WrapperStrategy {
         @Override
         public String toString() {
-            return "WrapperStrategy{" +
-                    "dependWrapperStrategyMapper=" + getDependWrapperStrategyMapper() +
-                    ", dependMustStrategyMapper=" + getDependMustStrategyMapper() +
-                    ", dependenceStrategy=" + getDependenceStrategy() +
-                    ", skipStrategy=" + getSkipStrategy() +
-                    '}';
+            final StringBuilder sb = new StringBuilder(128)
+                    .append(this.getClass().getSimpleName()).append('{');
+            final AtomicBoolean needAppendSplit = new AtomicBoolean();
+            appendNotNullProperty(sb, "dependWrapperStrategyMapper=",
+                    getDependWrapperStrategyMapper(), needAppendSplit, ", ");
+            appendNotNullProperty(sb, "dependMustStrategyMapper=",
+                    getDependMustStrategyMapper(), needAppendSplit, ", ");
+            appendNotNullProperty(sb, "dependenceStrategy=",
+                    getDependenceStrategy(), needAppendSplit, ", ");
+            appendNotNullProperty(sb, "skipStrategy=",
+                    getSkipStrategy(), needAppendSplit, ", ");
+            return sb.append('}').toString();
+        }
+
+        private static void appendNotNullProperty(StringBuilder sb,
+                                                  String propPrefix,
+                                                  Object prop,
+                                                  AtomicBoolean needAppendSplit,
+                                                  @SuppressWarnings("SameParameterValue") String split) {
+            if (prop == null) {
+                return;
+            }
+            if (needAppendSplit.get()) {
+                sb.append(split);
+            }
+            sb.append(propPrefix).append(prop);
+            needAppendSplit.set(true);
         }
     }
 
@@ -117,6 +139,7 @@ public interface WrapperStrategy extends DependenceStrategy, SkipStrategy {
             return null;
         }
 
+        @SuppressWarnings("deprecation")
         @Override
         public DependMustStrategyMapper getDependMustStrategyMapper() {
             return null;

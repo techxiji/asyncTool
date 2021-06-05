@@ -1,6 +1,5 @@
 package com.jd.platform.async.callback;
 
-import com.jd.platform.async.exception.SkippedException;
 import com.jd.platform.async.worker.WorkResult;
 
 /**
@@ -9,9 +8,20 @@ import com.jd.platform.async.worker.WorkResult;
  * @author wuweifeng wrote on 2019-11-19.
  */
 public class DefaultCallback<T, V> implements ICallback<T, V> {
+    private static final DefaultCallback<Object, Object> instance = new DefaultCallback<Object, Object>() {
+        @Override
+        public String toString() {
+            return "(DefaultCallback instance)";
+        }
+    };
+
+    public static DefaultCallback<Object, Object> getInstance() {
+        return instance;
+    }
+
     @Override
     public void begin() {
-
+        // do nothing
     }
 
     /**

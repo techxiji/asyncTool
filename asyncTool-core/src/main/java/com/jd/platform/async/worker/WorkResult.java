@@ -28,6 +28,7 @@ public class WorkResult<V> {
      * 返回不可修改的DEFAULT单例。
      */
     public static <V> WorkResult<V> defaultResult() {
+        //noinspection unchecked
         return (WorkResult<V>) DEFAULT;
     }
 

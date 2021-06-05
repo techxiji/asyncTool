@@ -65,14 +65,13 @@ public class Async {
     }
 
     /**
-     * 核心方法。
-     * 该方法不是同步阻塞执行的。如果想要同步阻塞执行，则调用返回值的{@link OnceWork#awaitFinish()}即可。
+     * <b>核心方法。该方法不是同步阻塞执行的。</b>如果想要同步阻塞执行，则调用返回值的{@link OnceWork#awaitFinish()}即可。
      *
      * @param timeout         全组超时时间
      * @param executorService 执行线程池
      * @param workerWrappers  任务容器集合
      * @param workId          本次工作id
-     * @return 返回 {@link OnceWork}封装对象。
+     * @return 返回 {@link OnceWork}任务句柄对象。
      */
     public static OnceWork work(long timeout,
                                 ExecutorService executorService,
@@ -95,59 +94,6 @@ public class Async {
         return onceWork;
     }
 
-    /**
-     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
-     */
-    @SuppressWarnings("unused")
-    @Deprecated
-    public static void beginWorkAsync(long timeout, IGroupCallback groupCallback, WorkerWrapper... workerWrapper) {
-        beginWorkAsync(timeout, getCommonPool(), groupCallback, workerWrapper);
-    }
-
-    /**
-     * 异步执行,直到所有都完成,或失败后，发起回调
-     *
-     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
-     */
-    @Deprecated
-    public static void beginWorkAsync(long timeout, ExecutorService executorService, IGroupCallback groupCallback, WorkerWrapper... workerWrapper) {
-        if (groupCallback == null) {
-            groupCallback = new DefaultGroupCallback();
-        }
-        IGroupCallback finalGroupCallback = groupCallback;
-        if (executorService != null) {
-            executorService.submit(() -> {
-                try {
-                    boolean success = beginWork(timeout, executorService, workerWrapper);
-                    if (success) {
-                        finalGroupCallback.success(Arrays.asList(workerWrapper));
-                    } else {
-                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
-                    }
-                } catch (ExecutionException | InterruptedException e) {
-                    e.printStackTrace();
-                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
-                }
-            });
-        } else {
-            final ExecutorService commonPool = getCommonPool();
-            commonPool.submit(() -> {
-                try {
-                    boolean success = beginWork(timeout, commonPool, workerWrapper);
-                    if (success) {
-                        finalGroupCallback.success(Arrays.asList(workerWrapper));
-                    } else {
-                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
-                    }
-                } catch (ExecutionException | InterruptedException e) {
-                    e.printStackTrace();
-                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
-                }
-            });
-        }
-
-    }
-
     // ========================= 设置/属性选项 =========================
 
     /**
@@ -156,7 +102,11 @@ public class Async {
      * 在v1.4及之前，该COMMON_POLL是被写死的。
      * <p>
      * 自v1.5后：
-     * 该线程池会被懒加载。
+     * 该线程池将会在第一次调用{@link #getCommonPool()}时懒加载。
+     * tip:
+     * 要注意，{@link #work(long, WorkerWrapper[])}、{@link #work(long, Collection)}这些方法，
+     * 不传入线程池就会默认调用{@link #getCommonPool()}，就会初始化线程池。
+     * <p>
      * 该线程池将会给线程取名为asyncTool-commonPool-thread-0（数字不重复）。
      * </p>
      */
@@ -167,7 +117,11 @@ public class Async {
      * 当执行{@link #beginWork(long, ExecutorService, Collection)}方法时，ExecutorService将会被记录下来。
      * <p/>
      * 注意，这里是个static，也就是只能有一个线程池。用户自定义线程池时，也只能定义一个
+     *
+     * @deprecated 不明意义、毫无用处的字段。记录之前使用的线程池没啥意义。
      */
+    @SuppressWarnings("DeprecatedIsStillUsed")
+    @Deprecated
     private static final AtomicReference<ExecutorService> lastExecutorService = new AtomicReference<>(null);
 
     /**
@@ -186,7 +140,6 @@ public class Async {
                             new ThreadFactory() {
                                 private final AtomicLong threadCount = new AtomicLong(0);
 
-                                @SuppressWarnings("NullableProblems")
                                 @Override
                                 public Thread newThread(Runnable r) {
                                     Thread t = new Thread(r,
@@ -212,6 +165,10 @@ public class Async {
         return COMMON_POOL;
     }
 
+    /**
+     * @deprecated 不明意义的输出信息的方法
+     */
+    @Deprecated
     public static String getThreadCount() {
         return "activeCount=" + COMMON_POOL.getActiveCount() +
                 ",completedCount=" + COMMON_POOL.getCompletedTaskCount() +
@@ -280,6 +237,58 @@ public class Async {
     @Deprecated
     public static boolean beginWork(long timeout, WorkerWrapper... workerWrapper) throws ExecutionException, InterruptedException {
         return beginWork(timeout, getCommonPool(), workerWrapper);
+    }
+
+    /**
+     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
+     */
+    @Deprecated
+    public static void beginWorkAsync(long timeout, IGroupCallback groupCallback, WorkerWrapper... workerWrapper) {
+        beginWorkAsync(timeout, getCommonPool(), groupCallback, workerWrapper);
+    }
+
+    /**
+     * 异步执行,直到所有都完成,或失败后，发起回调
+     *
+     * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
+     */
+    @Deprecated
+    public static void beginWorkAsync(long timeout, ExecutorService executorService, IGroupCallback groupCallback, WorkerWrapper... workerWrapper) {
+        if (groupCallback == null) {
+            groupCallback = new DefaultGroupCallback();
+        }
+        IGroupCallback finalGroupCallback = groupCallback;
+        if (executorService != null) {
+            executorService.submit(() -> {
+                try {
+                    boolean success = beginWork(timeout, executorService, workerWrapper);
+                    if (success) {
+                        finalGroupCallback.success(Arrays.asList(workerWrapper));
+                    } else {
+                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
+                    }
+                } catch (ExecutionException | InterruptedException e) {
+                    e.printStackTrace();
+                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
+                }
+            });
+        } else {
+            final ExecutorService commonPool = getCommonPool();
+            commonPool.submit(() -> {
+                try {
+                    boolean success = beginWork(timeout, commonPool, workerWrapper);
+                    if (success) {
+                        finalGroupCallback.success(Arrays.asList(workerWrapper));
+                    } else {
+                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
+                    }
+                } catch (ExecutionException | InterruptedException e) {
+                    e.printStackTrace();
+                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
+                }
+            });
+        }
+
     }
 
     /**

@@ -1,6 +1,5 @@
 package com.jd.platform.async.wrapper;
 
-import com.jd.platform.async.exception.CancelSkippedException;
 import com.jd.platform.async.executor.PollingCenter;
 
 import java.util.Collection;
