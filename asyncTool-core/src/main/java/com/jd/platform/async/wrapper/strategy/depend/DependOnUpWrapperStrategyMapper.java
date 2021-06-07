@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * 对不同的{@link WorkerWrapper}调用者实行个性化依赖响应策略。
@@ -27,7 +28,6 @@ public class DependOnUpWrapperStrategyMapper implements DependenceStrategy {
     @SuppressWarnings("UnusedReturnValue")
     public DependOnUpWrapperStrategyMapper putMapping(WorkerWrapper<?, ?> targetWrapper, DependOnUpWrapperStrategy strategy) {
         mapper.put(targetWrapper, strategy);
-        toStringCache = null;
         return this;
     }
 
@@ -42,7 +42,7 @@ public class DependOnUpWrapperStrategyMapper implements DependenceStrategy {
      * @return 如果在mapper中有对fromWrapper的处理策略，则使用其进行判断。否则返回JUDGE_BY_AFTER交给下一个进行判断。
      */
     @Override
-    public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?,?>> dependWrappers,
+    public DependenceAction.WithProperty judgeAction(Set<WorkerWrapper<?, ?>> dependWrappers,
                                                      WorkerWrapper<?, ?> thisWrapper,
                                                      WorkerWrapper<?, ?> fromWrapper) {
         DependOnUpWrapperStrategy strategy = mapper.get(fromWrapper);
@@ -52,19 +52,18 @@ public class DependOnUpWrapperStrategyMapper implements DependenceStrategy {
         return strategy.judge(fromWrapper);
     }
 
-    /**
-     * 缓存toString
-     */
-    private String toStringCache;
-
     @Override
     public String toString() {
-        if (toStringCache == null) {
-            toStringCache = "DependWrapperStrategyMapper{mapper=" + mapper.entrySet().stream()
-                    .map(entry -> "{" + entry.getKey().getId() + ":" + entry.getValue() + "}")
-                    .collect(Collectors.toList())
-                    + "}";
+        final StringBuilder sb = new StringBuilder(64)
+                .append(this.getClass().getSimpleName()).append("{mapper=");
+        final Set<Map.Entry<WorkerWrapper<?, ?>, DependOnUpWrapperStrategy>> entrySet = mapper.entrySet();
+        entrySet.forEach(entry -> {
+            sb.append(entry.getKey().getId()).append(':').append(entry.getValue()).append(", ");
+        });
+        if (entrySet.size() > 0) {
+            final int length = sb.length();
+            sb.delete(length - 2, length);
         }
-        return toStringCache;
+        return sb.append('}').toString();
     }
 }

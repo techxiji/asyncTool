@@ -1,6 +1,7 @@
 package com.jd.platform.async.callback;
 
 
+import com.jd.platform.async.exception.EndsNormallyException;
 import com.jd.platform.async.exception.SkippedException;
 import com.jd.platform.async.worker.WorkResult;
 
@@ -27,13 +28,16 @@ public interface ICallback<T, V> {
     void result(boolean success, T param, WorkResult<V> workResult);
 
     /**
-     * 提供常量选项：打印异常信息，跳过时的异常{@link SkippedException}不会打印。
+     * 提供常量选项：
+     * <p/>
+     * 如果发生了异常，则打印异常信息。
+     * 正常结束（例如取消、跳过）的异常{@link com.jd.platform.async.exception.EndsNormallyException}不会打印。
      */
     ICallback PRINT_EXCEPTION_STACK_TRACE = new ICallback<Object, Object>() {
         @Override
         public void result(boolean success, Object param, WorkResult<Object> workResult) {
             Exception ex = workResult.getEx();
-            if (ex != null && !(ex instanceof SkippedException)) {
+            if (ex != null && !(ex instanceof EndsNormallyException)) {
                 ex.printStackTrace();
             }
         }

@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
  *
  * @author create by TcSnZh on 2021/5/4-下午1:24
  */
+@SuppressWarnings("UnusedReturnValue")
 public class DependMustStrategyMapper implements DependenceStrategy {
 
     private final Set<WorkerWrapper<?, ?>> mustDependSet = new LinkedHashSet<>();

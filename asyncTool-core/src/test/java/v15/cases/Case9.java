@@ -24,7 +24,7 @@ class Case9 {
                     System.out.println("I am IWorker 1");
                     return null;
                 },
-                new DefaultCallback<>(),
+                DefaultCallback.getInstance(),
                 false,
                 true,
                 100,
@@ -38,7 +38,7 @@ class Case9 {
                     System.out.println("I am IWorker 2");
                     return null;
                 },
-                new DefaultCallback<>(),
+                DefaultCallback.getInstance(),
                 false,
                 true,
                 100,

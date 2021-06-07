@@ -348,6 +348,7 @@ class StableWorkerWrapperBuilder<T, V, BUILDER_SUB_CLASS extends StableWorkerWra
                 wrapper.getWrapperStrategy().setDependWrapperStrategyMapper(mapper);
             }
             if (selfIsMustSet != null && selfIsMustSet.size() > 0) {
+                //noinspection deprecation
                 selfIsMustSet.forEach(next -> Optional.ofNullable(next.getWrapperStrategy().getDependMustStrategyMapper())
                         .ifPresent(mustMapper -> mustMapper.addDependMust(wrapper)));
             }

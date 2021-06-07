@@ -72,6 +72,9 @@ public interface OnceWork {
      */
     default Map<String, WorkerWrapper<?, ?>> getWrappersOfState(ResultState... ofState) {
         final HashSet<ResultState> states = new HashSet<>(Arrays.asList(ofState));
+        if (states.isEmpty()) {
+            return new HashMap<>(1);
+        }
         return getWrappers().entrySet().stream()
                 .filter(entry -> states.contains(entry.getValue().getWorkResult().getResultState()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -123,6 +126,8 @@ public interface OnceWork {
     }
 
     /**
+     * 返回{@link Future}视图。
+     *
      * @param sleepCheckInterval 为防止线程爆炸，在{@link Future#get(long, TimeUnit)}方法时使用隔一段时间检查一次。
      *                           该Function的参数为总超时毫秒值，返回值为检查时间间隔。
      * @return 返回 {@link AsFuture}封装对象。
@@ -152,16 +157,19 @@ public interface OnceWork {
         }
 
         /**
-         * 同步等待取消
+         * 同步等待取消。
          *
-         * @param ignore__mayInterruptIfRunning 该参数将被无视。因为暂未实现“修改允许打断属性”功能。 // todo 等待实现
+         * @param ignore 该参数将被无视。因为暂未实现“修改允许打断属性”功能。todo : await implement
          */
         @Override
-        public boolean cancel(boolean ignore__mayInterruptIfRunning) {
+        public boolean cancel(boolean ignore) {
             try {
+                if (onceWork.isFinish()) {
+                    return false;
+                }
                 onceWork.pleaseCancelAndAwaitFinish();
             } catch (InterruptedException e) {
-                throw new RuntimeException("", e);
+                throw new RuntimeException("interrupted when await finish in : " + this, e);
             }
             return true;
         }
@@ -189,7 +197,7 @@ public interface OnceWork {
          */
         @Override
         public Map<String, WorkerWrapper<?, ?>> get(long timeout,
-                                                    @SuppressWarnings("NullableProblems") TimeUnit unit)
+                                                    TimeUnit unit)
                 throws InterruptedException, ExecutionException, TimeoutException {
             final long millis = Objects.requireNonNull(unit).toMillis(timeout);
             final long interval = Math.max(1, Math.min(millis, sleepCheckInterval.apply(millis)));
@@ -206,7 +214,7 @@ public interface OnceWork {
 
         @Override
         public String toString() {
-            return "(asFuture from " + this + ")";
+            return "(asFuture from " + onceWork + ")@" + Integer.toHexString(this.hashCode());
         }
     }
 

@@ -1,6 +1,7 @@
 package com.jd.platform.async.wrapper;
 
-import com.jd.platform.async.exception.CancelSkippedException;
+import com.jd.platform.async.exception.CancelException;
+import com.jd.platform.async.exception.EndsNormallyException;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.callback.DefaultCallback;
@@ -113,7 +114,8 @@ public abstract class WorkerWrapper<T, V> {
         this.id = id;
         //允许不设置回调
         if (callback == null) {
-            callback = new DefaultCallback<>();
+            //noinspection unchecked
+            callback = (ICallback<T, V>) DefaultCallback.getInstance();
         }
         this.callback = callback;
         this.allowInterrupt = allowInterrupt;
@@ -237,7 +239,7 @@ public abstract class WorkerWrapper<T, V> {
      */
     public void cancel() {
         if (State.setState(state, states_of_beforeWorkingEnd, SKIP, null)) {
-            fastFail(false, new CancelSkippedException(), true);
+            fastFail(false, new CancelException(), true);
         }
     }
 
@@ -270,7 +272,7 @@ public abstract class WorkerWrapper<T, V> {
                         callback.result(success, param, _workResult);
                     } catch (Exception e) {
                         if (setState(state, states_of_skipOrAfterWork, ERROR, null)) {
-                            fastFail(false, e, _workResult.getEx() instanceof SkippedException);
+                            fastFail(false, e, _workResult.getEx() instanceof EndsNormallyException);
                         }
                     }
                 };
@@ -281,8 +283,8 @@ public abstract class WorkerWrapper<T, V> {
                 };
         final BiConsumer<Boolean, Exception> __function__fastFail_callbackResult$false_beginNext =
                 (fastFail_isTimeout, fastFail_exception) -> {
-                    boolean isSkip = fastFail_exception instanceof SkippedException;
-                    fastFail(fastFail_isTimeout && !isSkip, fastFail_exception, isSkip);
+                    boolean isEndsNormally = fastFail_exception instanceof EndsNormallyException;
+                    fastFail(fastFail_isTimeout && !isEndsNormally, fastFail_exception, isEndsNormally);
                     __function__callbackResultOfFalse_beginNext.run();
                 };
         final Runnable __function__doWork =
@@ -413,13 +415,14 @@ public abstract class WorkerWrapper<T, V> {
      * 快速失败。
      * 该方法不负责检查状态，请自行控制。
      *
-     * @param isTimeout 是否是因为超时而快速失败
-     * @param e         设置异常信息到{@link WorkResult#getEx()}
+     * @param isTimeout      是否是因为超时而快速失败
+     * @param e              设置异常信息到{@link WorkResult#getEx()}
+     * @param isEndsNormally 是否是因正常情况正常而结束，例如跳过{@link SkippedException}、取消{@link CancelException}。
      */
-    protected void fastFail(boolean isTimeout, Exception e, boolean isSkip) {
+    protected void fastFail(boolean isTimeout, Exception e, boolean isEndsNormally) {
         // 试图打断正在执行{@link IWorker#action(Object, Map)}的线程
         Thread _doWorkingThread;
-        if ((_doWorkingThread = doWorkingThread.get()) != null
+        if ((_doWorkingThread = this.doWorkingThread.get()) != null
                 // 不会打断自己
                 && !Objects.equals(Thread.currentThread(), _doWorkingThread)) {
             _doWorkingThread.interrupt();
@@ -427,7 +430,7 @@ public abstract class WorkerWrapper<T, V> {
         // 尚未处理过结果则设置
         workResult.compareAndSet(null, new WorkResult<>(
                 worker.defaultValue(),
-                isTimeout ? ResultState.TIMEOUT : (isSkip ? ResultState.DEFAULT : ResultState.EXCEPTION),
+                isTimeout ? ResultState.TIMEOUT : (isEndsNormally ? ResultState.DEFAULT : ResultState.EXCEPTION),
                 e
         ));
     }
@@ -520,8 +523,9 @@ public abstract class WorkerWrapper<T, V> {
 
     @Override
     public String toString() {
-        final StringBuilder sb = new StringBuilder(400)
-                .append("WorkerWrapper{id=").append(id)
+        final StringBuilder sb = new StringBuilder(256)
+                .append(this.getClass().getSimpleName())
+                .append("{id=").append(id)
                 .append(", state=").append(of(state.get()))
                 .append(", param=").append(param)
                 .append(", workResult=").append(workResult)
@@ -571,6 +575,7 @@ public abstract class WorkerWrapper<T, V> {
             this.dependOnUpWrapperStrategyMapper = dependOnUpWrapperStrategyMapper;
         }
 
+        @SuppressWarnings("deprecation")
         @Override
         public DependMustStrategyMapper getDependMustStrategyMapper() {
             return dependMustStrategyMapper;
