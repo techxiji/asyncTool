@@ -126,6 +126,7 @@ public class Async {
 
     /**
      * 该方法将会返回{@link #COMMON_POOL}，如果还未初始化则会懒加载初始化后再返回。
+     * 详情参考{@link #COMMON_POOL}上的注解
      */
     public static ThreadPoolExecutor getCommonPool() {
         if (COMMON_POOL == null) {

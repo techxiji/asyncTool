@@ -493,7 +493,7 @@ Async.work(1000, Executors.newFixedThreadPool(2),a).awaitFinish();
 
 WorkerWrapper会在这些情况被运行：
 
-* 在`Async.beginWork`中传入wrapper
+* 在`Async.work`中传入wrapper
 * 上游wrapper完成后被调用
 
 开始运行时，执行逻辑如下图所示：
@@ -1259,11 +1259,11 @@ class Case7 {
 
 ### 设置超时
 
-可以在`Async.beginWork(/* ... */)`中传入总超时时间，也可以对单个wrapper设置超时时间。
+可以在`Async.work(/* ... */)`中传入总超时时间，也可以对单个wrapper设置超时时间。
 
 #### 总任务时间超时
 
-在`Async.beginWork`方法中可以指定总超时时间。
+在`Async.work`方法中可以指定总超时时间。
 
 #### 单wrapper任务时间超时
 
