@@ -26,4 +26,12 @@
         <module>asyncTool-openutil</module>
         <module>asyncTool-core</module>
     </modules>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.checkerframework</groupId>
+            <artifactId>checker-qual</artifactId>
+            <version>3.8.0</version>
+        </dependency>
+    </dependencies>
 </project>
