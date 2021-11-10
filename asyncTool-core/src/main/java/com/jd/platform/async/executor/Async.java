@@ -7,7 +7,8 @@ import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.worker.OnceWork;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperGroup;
-import com.sun.istack.internal.Nullable;
+import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
  * @author wuweifeng wrote on 2019-12-18
  * @version 1.0
  */
+@SuppressWarnings({"rawtypes", "DeprecatedIsStillUsed"})
 public class Async {
 
     // ========================= 任务执行核心代码 =========================
@@ -142,7 +144,7 @@ public class Async {
                                 private final AtomicLong threadCount = new AtomicLong(0);
 
                                 @Override
-                                public Thread newThread(Runnable r) {
+                                public Thread newThread(@NonNull Runnable r) {
                                     Thread t = new Thread(r,
                                             "asyncTool-commonPool-thread-" + threadCount.getAndIncrement());
                                     t.setDaemon(true);
@@ -221,7 +223,7 @@ public class Async {
      */
     @Deprecated
     public static boolean beginWork(long timeout, ExecutorService executorService, WorkerWrapper... workerWrapper)
-            throws ExecutionException, InterruptedException {
+            throws InterruptedException {
         if (workerWrapper == null || workerWrapper.length == 0) {
             return false;
         }
@@ -236,7 +238,7 @@ public class Async {
      * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
      */
     @Deprecated
-    public static boolean beginWork(long timeout, WorkerWrapper... workerWrapper) throws ExecutionException, InterruptedException {
+    public static boolean beginWork(long timeout, WorkerWrapper... workerWrapper) throws InterruptedException {
         return beginWork(timeout, getCommonPool(), workerWrapper);
     }
 
@@ -260,36 +262,32 @@ public class Async {
         }
         IGroupCallback finalGroupCallback = groupCallback;
         if (executorService != null) {
-            executorService.submit(() -> {
-                try {
-                    boolean success = beginWork(timeout, executorService, workerWrapper);
-                    if (success) {
-                        finalGroupCallback.success(Arrays.asList(workerWrapper));
-                    } else {
-                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
-                    }
-                } catch (ExecutionException | InterruptedException e) {
-                    e.printStackTrace();
-                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
-                }
-            });
+            submitBeginWork(timeout, finalGroupCallback, executorService, Arrays.asList(workerWrapper), workerWrapper);
         } else {
             final ExecutorService commonPool = getCommonPool();
-            commonPool.submit(() -> {
-                try {
-                    boolean success = beginWork(timeout, commonPool, workerWrapper);
-                    if (success) {
-                        finalGroupCallback.success(Arrays.asList(workerWrapper));
-                    } else {
-                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
-                    }
-                } catch (ExecutionException | InterruptedException e) {
-                    e.printStackTrace();
-                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
-                }
-            });
+            submitBeginWork(timeout, finalGroupCallback, commonPool, Arrays.asList(workerWrapper), workerWrapper);
         }
 
+    }
+
+    private static void submitBeginWork(long timeout,
+                                        IGroupCallback finalGroupCallback,
+                                        ExecutorService commonPool,
+                                        List<WorkerWrapper> workerWrappers,
+                                        WorkerWrapper[] workerWrapper) {
+        commonPool.submit(() -> {
+            try {
+                boolean success = beginWork(timeout, commonPool, workerWrapper);
+                if (success) {
+                    finalGroupCallback.success(workerWrappers);
+                } else {
+                    finalGroupCallback.failure(workerWrappers, new TimeoutException());
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                finalGroupCallback.failure(workerWrappers, e);
+            }
+        });
     }
 
     /**

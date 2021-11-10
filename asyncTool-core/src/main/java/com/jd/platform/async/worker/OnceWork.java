@@ -277,7 +277,7 @@ public interface OnceWork {
 
         @Override
         public boolean isFinish() {
-            return group.getEndCDL().getCount() > 0;
+            return group.getEndCDL().getCount() == 0;
         }
 
         @Override
@@ -302,7 +302,7 @@ public interface OnceWork {
 
         @Override
         public long getFinishTime() {
-            if (isFinish()) {
+            if (!isFinish()) {
                 throw new IllegalStateException("work not finish.");
             }
             return group.getFinishTime();
