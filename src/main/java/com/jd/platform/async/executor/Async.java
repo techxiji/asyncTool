@@ -18,7 +18,7 @@ public class Async {
     /**
      * 默认线程池
      */
-    private static final ThreadPoolExecutor COMMON_POOL = (ThreadPoolExecutor) Executors.newCachedThreadPool();;
+    private static final ThreadPoolExecutor COMMON_POOL = (ThreadPoolExecutor) Executors.newCachedThreadPool();
 
     private static ExecutorService executorService;
 
