@@ -18,11 +18,7 @@ public class Async {
     /**
      * 默认线程池
      */
-    private static final ThreadPoolExecutor COMMON_POOL =
-            new ThreadPoolExecutor(Runtime.getRuntime().availableProcessors() * 2, 1024,
-                    15L, TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(),
-                    (ThreadFactory) Thread::new);
+    private static final ThreadPoolExecutor COMMON_POOL = (ThreadPoolExecutor) Executors.newCachedThreadPool();;
 
     private static ExecutorService executorService;
 
