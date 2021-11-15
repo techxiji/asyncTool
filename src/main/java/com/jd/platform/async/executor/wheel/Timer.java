@@ -33,7 +33,11 @@ public class Timer {
      * 构造函数
      */
     public Timer() {
-        timeWheel = new TimeWheel(1, 20, delayList);
+        for (int i = 0; i < 20; i++) {
+            delayList.add(new ArrayList<>(16));
+        }
+
+        timeWheel = new TimeWheel(1, 20, delayList, 0);
         //默认就1线程
         bossThreadPool = Executors.newSingleThreadScheduledExecutor();
         //20ms获取一次过期任务
@@ -66,7 +70,7 @@ public class Timer {
             }
 
             //取20-list对应的时间槽
-            List<TimerTaskList> timerTaskList = delayList.get(index);
+            List<TimerTaskList> timerTaskList = delayList.get(index % 20);
             //delayList一个时间槽里所有时间轮的对应槽，先清空再重新添加
             List<TimerTaskList> tmpList = new ArrayList<>(16);
             tmpList.addAll(timerTaskList);
@@ -74,11 +78,8 @@ public class Timer {
 
             //遍历所有轮的槽，执行
             for (TimerTaskList singleWheelList: tmpList) {
-                if (singleWheelList != null) {
-                    //执行过期任务（包含降级操作）
-                    //TODO 加到要执行的列表，并执行
-                    singleWheelList.flush(this::addTask);
-                }
+                //TODO 加到要执行的列表，并执行
+                singleWheelList.flush(this::addTask);
             }
             INDEX.incrementAndGet();
         } catch (Exception e) {

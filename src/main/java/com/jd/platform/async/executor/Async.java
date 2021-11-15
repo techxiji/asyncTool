@@ -161,10 +161,6 @@ public class Async {
     }
 
     public static Timer getTimer() {
-        return timer;
-    }
-
-    public static void setTimer(Timer timer) {
-        Async.timer = timer;
+        return Async.timer;
     }
 }
