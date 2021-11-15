@@ -87,6 +87,7 @@ public class TimeWheel {
             timerTaskList.addTask(timerTask);
             if (timerTaskList.setExpiration(virtualId * tickMs)) {
                 //添加到delayQueue中
+                //TODO 改成加到list对应元素
                 delayQueue.offer(timerTaskList);
             }
         } else {
