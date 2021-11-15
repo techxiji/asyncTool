@@ -2,7 +2,6 @@ package com.jd.platform.async.executor.wheel;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.DelayQueue;
 
 /**
  * 时间轮
@@ -30,11 +29,6 @@ public class TimeWheel {
     private TimerTaskList[] timerTaskLists;
 
     /**
-     * 当前时间
-     */
-    private long currentTime;
-
-    /**
      * 上层时间轮
      */
     private volatile TimeWheel overflowWheel;
@@ -44,14 +38,11 @@ public class TimeWheel {
      */
     private List<List<TimerTaskList>> delayList;
 
-    public TimeWheel(long tickMs, int wheelSize, long currentTime, List<List<TimerTaskList>> delayList) {
-        this.currentTime = currentTime;
+    public TimeWheel(long tickMs, int wheelSize, List<List<TimerTaskList>> delayList) {
         this.tickMs = tickMs;
         this.wheelSize = wheelSize;
         this.interval = tickMs * wheelSize;
         this.timerTaskLists = new TimerTaskList[wheelSize];
-        //currentTime为tickMs的整数倍 这里做取整操作
-        this.currentTime = currentTime - (currentTime % tickMs);
         this.delayList = delayList;
         for (int i = 0; i < wheelSize; i++) {
             timerTaskLists[i] = new TimerTaskList();
@@ -65,7 +56,7 @@ public class TimeWheel {
         if (overflowWheel == null) {
             synchronized (this) {
                 if (overflowWheel == null) {
-                    overflowWheel = new TimeWheel(interval, wheelSize, currentTime, delayList);
+                    overflowWheel = new TimeWheel(interval, wheelSize, delayList);
                 }
             }
         }
@@ -77,6 +68,9 @@ public class TimeWheel {
      */
     public boolean addTask(TimerTask timerTask) {
         long expiration = timerTask.getDelayMs();
+        long currentTime = System.currentTimeMillis();
+        currentTime = currentTime - (currentTime % tickMs);
+
         //过期任务直接执行
         if (expiration < currentTime + tickMs) {
             return false;
@@ -101,18 +95,5 @@ public class TimeWheel {
             timeWheel.addTask(timerTask);
         }
         return true;
-    }
-
-    /**
-     * 推进时间
-     */
-    public void advanceClock(long timestamp) {
-        if (timestamp >= currentTime + tickMs) {
-            currentTime = timestamp - (timestamp % tickMs);
-            if (overflowWheel != null) {
-                //推进上层时间轮时间
-                this.getOverflowWheel().advanceClock(timestamp);
-            }
-        }
     }
 }
