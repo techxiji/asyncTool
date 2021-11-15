@@ -3,6 +3,7 @@ package com.jd.platform.async.executor;
 
 import com.jd.platform.async.callback.DefaultGroupCallback;
 import com.jd.platform.async.callback.IGroupCallback;
+import com.jd.platform.async.executor.wheel.Timer;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 
 import java.util.*;
@@ -23,6 +24,10 @@ public class Async {
      * 注意，这里是个static，也就是只能有一个线程池。用户自定义线程池时，也只能定义一个
      */
     private static ExecutorService executorService;
+    /**
+     * 超时管理时间轮
+     */
+    private static Timer timer = new Timer();
 
     /**
      * 出发点
@@ -153,5 +158,13 @@ public class Async {
         return "activeCount=" + COMMON_POOL.getActiveCount() +
                 "  completedCount " + COMMON_POOL.getCompletedTaskCount() +
                 "  largestCount " + COMMON_POOL.getLargestPoolSize();
+    }
+
+    public static Timer getTimer() {
+        return timer;
+    }
+
+    public static void setTimer(Timer timer) {
+        Async.timer = timer;
     }
 }

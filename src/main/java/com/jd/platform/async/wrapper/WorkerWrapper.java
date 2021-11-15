@@ -4,7 +4,10 @@ import com.jd.platform.async.callback.DefaultCallback;
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.exception.SkippedException;
+import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.executor.timer.SystemClock;
+import com.jd.platform.async.executor.wheel.TimeOutCheckMession;
+import com.jd.platform.async.executor.wheel.TimerTask;
 import com.jd.platform.async.worker.DependWrapper;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
@@ -72,6 +75,10 @@ public class WorkerWrapper<T, V> {
      * 注意，该属性仅在nextWrapper数量<=1时有效，>1时的情况是不存在的
      */
     private volatile boolean needCheckNextWrapperResult = true;
+    /**
+     * 超时时间
+     */
+    private Long delayMs;
 
     private static final int FINISH = 1;
     private static final int ERROR = 2;
@@ -289,6 +296,12 @@ public class WorkerWrapper<T, V> {
      * 执行自己的job.具体的执行是在另一个线程里,但判断阻塞超时是在work线程
      */
     private void fire() {
+        //如果对任务有单独超时设置
+        if (delayMs != null) {
+            com.jd.platform.async.executor.wheel.TimerTask timerTask = new TimerTask(delayMs, new TimeOutCheckMession(this));
+            Async.getTimer().addTask(timerTask);
+        }
+
         //阻塞取结果
         workResult = workerDoJob();
     }
@@ -296,7 +309,7 @@ public class WorkerWrapper<T, V> {
     /**
      * 快速失败
      */
-    private boolean fastFail(int expect, Exception e) {
+    public boolean fastFail(int expect, Exception e) {
         //试图将它从expect状态,改成Error
         if (!compareAndSetState(expect, ERROR)) {
             return false;
@@ -433,7 +446,7 @@ public class WorkerWrapper<T, V> {
     }
 
 
-    private int getState() {
+    public int getState() {
         return state.get();
     }
 
@@ -604,6 +617,13 @@ public class WorkerWrapper<T, V> {
 
             return wrapper;
         }
+    }
 
+    public Long getDelayMs() {
+        return delayMs;
+    }
+
+    public void setDelayMs(Long delayMs) {
+        this.delayMs = delayMs;
     }
 }
