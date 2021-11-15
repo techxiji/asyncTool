@@ -298,7 +298,7 @@ public class WorkerWrapper<T, V> {
     private void fire() {
         //如果对任务有单独超时设置
         if (delayMs != null) {
-            com.jd.platform.async.executor.wheel.TimerTask timerTask = new TimerTask(delayMs, new TimeOutCheckMession(this));
+            TimerTask timerTask = new TimerTask(delayMs, new TimeOutCheckMession(this));
             Async.getTimer().addTask(timerTask);
         }
 
