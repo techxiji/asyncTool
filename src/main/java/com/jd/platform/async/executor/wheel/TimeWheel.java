@@ -101,8 +101,9 @@ public class TimeWheel {
                 //添加到delayList中
                 //TODO 改成加到list对应元素  【20槽, 时间轮层数】,这里添加前一定要初始化到对应层数
                 while (delayList.get(index).size() < overflowIndex + 1) {
-                    delayList.get(index).add(timerTaskList);
+                    delayList.get(index).add(new TimerTaskList());
                 }
+                //TODO 想办法只设置一次
                 delayList.get(index).set(overflowIndex, timerTaskList);
             }
         } else {
