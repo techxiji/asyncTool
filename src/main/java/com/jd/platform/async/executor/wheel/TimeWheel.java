@@ -1,5 +1,7 @@
 package com.jd.platform.async.executor.wheel;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.DelayQueue;
 
 /**
@@ -40,9 +42,9 @@ public class TimeWheel {
     /**
      * 一个Timer只有一个delayQueue
      */
-    private DelayQueue<TimerTaskList> delayQueue;
+    private List<List<TimerTaskList>> delayList;
 
-    public TimeWheel(long tickMs, int wheelSize, long currentTime, DelayQueue<TimerTaskList> delayQueue) {
+    public TimeWheel(long tickMs, int wheelSize, long currentTime, List<List<TimerTaskList>> delayList) {
         this.currentTime = currentTime;
         this.tickMs = tickMs;
         this.wheelSize = wheelSize;
@@ -50,7 +52,7 @@ public class TimeWheel {
         this.timerTaskLists = new TimerTaskList[wheelSize];
         //currentTime为tickMs的整数倍 这里做取整操作
         this.currentTime = currentTime - (currentTime % tickMs);
-        this.delayQueue = delayQueue;
+        this.delayList = delayList;
         for (int i = 0; i < wheelSize; i++) {
             timerTaskLists[i] = new TimerTaskList();
         }
@@ -63,7 +65,7 @@ public class TimeWheel {
         if (overflowWheel == null) {
             synchronized (this) {
                 if (overflowWheel == null) {
-                    overflowWheel = new TimeWheel(interval, wheelSize, currentTime, delayQueue);
+                    overflowWheel = new TimeWheel(interval, wheelSize, currentTime, delayList);
                 }
             }
         }
@@ -86,9 +88,12 @@ public class TimeWheel {
             TimerTaskList timerTaskList = timerTaskLists[index];
             timerTaskList.addTask(timerTask);
             if (timerTaskList.setExpiration(virtualId * tickMs)) {
-                //添加到delayQueue中
+                //添加到delayList中
+                if (delayList.get(index) == null) {
+                    delayList.set(index, new ArrayList<>(16));
+                }
                 //TODO 改成加到list对应元素
-                delayQueue.offer(timerTaskList);
+                delayList.get(index).add(timerTaskList);
             }
         } else {
             //放到上一层的时间轮
