@@ -85,7 +85,7 @@ public class TimeWheel {
      */
     public boolean addTask(TimerTask timerTask, long currentTime) {
         long expiration = timerTask.getDelayMsAndCur();
-        //urrentTime = currentTime - (currentTime % tickMs);
+        currentTime = currentTime - (currentTime % tickMs);
 
         //过期任务直接执行
         if (expiration < currentTime + tickMs) {
