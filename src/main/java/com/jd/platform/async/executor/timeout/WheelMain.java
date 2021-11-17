@@ -89,7 +89,7 @@ public class WheelMain {
         if (delay <= 0) {
             return;
         }
-        //放到第几个槽
+        //放到第几个槽，因为在add进来时，任务就已经开始执行了，要减去在添加这一霎那的那1毫秒的槽位
         int putIndex = INDEX.get() + delay % MAX_SIZE - 1 + 20;
         CopyOnWriteArrayList<SingleTask> list = allTaskList.get(putIndex % MAX_SIZE);
         //添加到该槽位的队列中
