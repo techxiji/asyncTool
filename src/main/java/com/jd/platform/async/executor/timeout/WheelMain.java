@@ -90,7 +90,7 @@ public class WheelMain {
             return;
         }
         //放到第几个槽
-        int putIndex = INDEX.get() + delay % MAX_SIZE - 1;
+        int putIndex = INDEX.get() + delay % MAX_SIZE - 1 + 20;
         CopyOnWriteArrayList<SingleTask> list = allTaskList.get(putIndex % MAX_SIZE);
         //添加到该槽位的队列中
         list.add(singleTask);
