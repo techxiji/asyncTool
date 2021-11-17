@@ -1,6 +1,9 @@
 package depend;
 
 import com.jd.platform.async.executor.Async;
+import com.jd.platform.async.executor.timeout.WheelMain;
+import com.jd.platform.async.executor.timeout.WrapperTimeOutTask;
+import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 
@@ -15,7 +18,8 @@ import java.util.concurrent.ExecutionException;
 public class Test {
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
-        for (int i = 0; i < 1; i++) {
+        int num = 0;
+        for (int i = 0; i < 100; i++) {
             DeWorker w = new DeWorker();
             DeWorker1 w1 = new DeWorker1();
             DeWorker2 w2 = new DeWorker2();
@@ -41,7 +45,7 @@ public class Test {
                     .callback(w)
                     .build();
 
-            workerWrapper.setDelayMs(1005L);
+            workerWrapper.setDelayMs(77L);
 
             //虽然尚未执行，但是也可以先取得结果的引用，作为下一个任务的入参。V1.2前写法，需要手工给
             //V1.3后，不用给wrapper setParam了，直接在worker的action里自行根据id获取即可.参考dependnew包下代码
@@ -50,11 +54,15 @@ public class Test {
             workerWrapper1.setParam(result);
             workerWrapper2.setParam(result1);
 
+            Async.beginWork(250L, workerWrapper);
 
-            Async.beginWork(3500L, workerWrapper);
+            //System.out.println(workerWrapper2.getWorkResult());
 
-            System.out.println(workerWrapper2.getWorkResult());
+            if (workerWrapper2.getWorkResult().getResultState().equals(ResultState.TIMEOUT)) {
+                num++;
+            }
         }
+        System.out.println(num);
 
         Async.shutDown();
     }

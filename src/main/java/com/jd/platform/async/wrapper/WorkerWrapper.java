@@ -5,6 +5,8 @@ import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.exception.SkippedException;
 import com.jd.platform.async.executor.Async;
+import com.jd.platform.async.executor.timeout.WheelMain;
+import com.jd.platform.async.executor.timeout.WrapperTimeOutTask;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.executor.wheel.TimeOutCheckMession;
 import com.jd.platform.async.executor.wheel.TimerTask;
@@ -297,9 +299,12 @@ public class WorkerWrapper<T, V> {
      */
     private void fire() {
         //如果对任务有单独超时设置
+//        if (delayMs != null) {
+//            TimerTask timerTask = new TimerTask(delayMs, new TimeOutCheckMession(this));
+//            Async.getTimer().addTask(timerTask);
+//        }
         if (delayMs != null) {
-            TimerTask timerTask = new TimerTask(delayMs, new TimeOutCheckMession(this));
-            Async.getTimer().addTask(timerTask);
+            WheelMain.addTask(new WrapperTimeOutTask(this, delayMs.intValue()));
         }
 
         //阻塞取结果

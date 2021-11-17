@@ -68,10 +68,12 @@ public class WheelMain {
             //索引前进一格
             INDEX.incrementAndGet();
 
+            long currentTimeMillis = System.currentTimeMillis();
+
             //遍历槽内所有任务
             for (SingleTask singleTask : timerTaskList) {
                 //如果level = 0，代表时间到了，或者创建时间+超时时间>当前时间了，也是时间到了
-                if (singleTask.getLevel() <= 0 || singleTask.getCurrentTime() + singleTask.getDelayMs() <= System.currentTimeMillis()) {
+                if (singleTask.getLevel() <= 0 || singleTask.getCurrentTime() + singleTask.getDelayMs() <= currentTimeMillis) {
                     //给予回调
                     singleTask.getTimeoutTask().timeoutCallback();
                     //从列表删除

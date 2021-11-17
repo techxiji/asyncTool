@@ -3,6 +3,7 @@ package com.jd.platform.async.executor;
 
 import com.jd.platform.async.callback.DefaultGroupCallback;
 import com.jd.platform.async.callback.IGroupCallback;
+import com.jd.platform.async.executor.timeout.WheelMain;
 import com.jd.platform.async.executor.wheel.Timer;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 
@@ -27,7 +28,14 @@ public class Async {
     /**
      * 超时管理时间轮
      */
-    private static Timer timer = new Timer();
+//    private static Timer timer = new Timer();
+
+    /**
+     * 初始化时间轮
+     */
+    static {
+        WheelMain.init();
+    }
 
     /**
      * 出发点
@@ -160,7 +168,7 @@ public class Async {
                 "  largestCount " + COMMON_POOL.getLargestPoolSize();
     }
 
-    public static Timer getTimer() {
-        return Async.timer;
-    }
+//    public static Timer getTimer() {
+//        return Async.timer;
+//    }
 }

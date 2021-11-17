@@ -15,9 +15,9 @@ public class DeWorker1 implements IWorker<WorkResult<User>, User>, ICallback<Wor
 
     @Override
     public User action(WorkResult<User> result, Map<String, WorkerWrapper> allWrappers) {
-        System.out.println("par1的入参来自于par0： " + result.getResult());
+        //System.out.println("par1的入参来自于par0： " + result.getResult());
         try {
-            Thread.sleep(1000);
+            Thread.sleep(70);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -37,7 +37,7 @@ public class DeWorker1 implements IWorker<WorkResult<User>, User>, ICallback<Wor
 
     @Override
     public void result(boolean success, WorkResult<User> param, WorkResult<User> workResult) {
-        System.out.println("worker1 的结果是：" + workResult.getResult());
+        //System.out.println("worker1 的结果是：" + workResult.getResult());
     }
 
 }

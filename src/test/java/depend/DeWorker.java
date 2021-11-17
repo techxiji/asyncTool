@@ -16,7 +16,7 @@ public class DeWorker implements IWorker<String, User>, ICallback<String, User> 
     @Override
     public User action(String object, Map<String, WorkerWrapper> allWrappers) {
         try {
-            Thread.sleep(1000);
+            Thread.sleep(70);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -36,7 +36,7 @@ public class DeWorker implements IWorker<String, User>, ICallback<String, User> 
 
     @Override
     public void result(boolean success, String param, WorkResult<User> workResult) {
-        System.out.println("worker0 的结果是：" + workResult.getResult());
+        //System.out.println("worker0 的结果是：" + workResult.getResult());
     }
 
 }
