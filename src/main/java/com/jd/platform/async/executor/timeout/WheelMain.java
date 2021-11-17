@@ -30,11 +30,18 @@ public class WheelMain {
      * 执行到的index
      */
     private static final AtomicInteger INDEX = new AtomicInteger(0);
+    /**
+     * 是否已经初始化过了，避免重复初始化
+     */
+    private static boolean hasInit = false;
 
     /**
      * 初始化
      */
     public static void init() {
+        if (hasInit) {
+            return;
+        }
         for (int i = 0; i < MAX_SIZE; i++) {
             CopyOnWriteArrayList<SingleTask> list = new CopyOnWriteArrayList<>();
             allTaskList.add(list);
@@ -42,6 +49,7 @@ public class WheelMain {
         //单线程调度器，1ms执行一次。注意，当发生fullGc时，该定时器将不再能准确执行
         ScheduledExecutorService bossThreadPool = Executors.newSingleThreadScheduledExecutor();
         bossThreadPool.scheduleAtFixedRate(WheelMain::advanceClock, 0, 1, TimeUnit.MILLISECONDS);
+        hasInit = true;
     }
 
     /**
