@@ -85,7 +85,6 @@ public class TimeWheel {
      */
     public boolean addTask(TimerTask timerTask, long currentTime) {
         long expiration = timerTask.getDelayMsAndCur();
-        //urrentTime = currentTime - (currentTime % tickMs);
 
         //过期任务直接执行
         if (expiration < currentTime + tickMs) {
@@ -97,15 +96,14 @@ public class TimeWheel {
             //System.out.println("tickMs:" + tickMs + "------index:" + index + "------expiration:" + expiration);
             TimerTaskList timerTaskList = timerTaskLists[index];
             timerTaskList.addTask(timerTask);
-            if (timerTaskList.setExpiration(virtualId * tickMs)) {
-                //添加到delayList中
-                //TODO 改成加到list对应元素  【20槽, 时间轮层数】,这里添加前一定要初始化到对应层数
-                while (delayList.get(index).size() < overflowIndex + 1) {
-                    delayList.get(index).add(new TimerTaskList());
-                }
-                //TODO 想办法只设置一次
-                delayList.get(index).set(overflowIndex, timerTaskList);
+
+            //加到delayList对应元素  【20槽, 时间轮层数】,这里添加前一定要初始化到对应层数
+            while (delayList.get(index).size() < overflowIndex + 1) {
+                delayList.get(index).add(new TimerTaskList());
             }
+            //这里每次清空整个槽位的List，并且flush List的元素链表，所以没问题
+            delayList.get(index).set(overflowIndex, timerTaskList);
+
         } else {
             //放到上一层的时间轮
             TimeWheel timeWheel = getOverflowWheel();
