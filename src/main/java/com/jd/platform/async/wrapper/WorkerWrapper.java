@@ -4,12 +4,9 @@ import com.jd.platform.async.callback.DefaultCallback;
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.exception.SkippedException;
-import com.jd.platform.async.executor.Async;
-import com.jd.platform.async.executor.timeout.WheelMain;
-import com.jd.platform.async.executor.timeout.WrapperTimeOutTask;
 import com.jd.platform.async.executor.timer.SystemClock;
-import com.jd.platform.async.executor.wheel.TimeOutCheckMession;
-import com.jd.platform.async.executor.wheel.TimerTask;
+import com.jd.platform.async.timewheel.ITimeoutTask;
+import com.jd.platform.async.timewheel.WheelMain;
 import com.jd.platform.async.worker.DependWrapper;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
@@ -298,13 +295,22 @@ public class WorkerWrapper<T, V> {
      * 执行自己的job.具体的执行是在另一个线程里,但判断阻塞超时是在work线程
      */
     private void fire() {
-        //如果对任务有单独超时设置
-//        if (delayMs != null) {
-//            TimerTask timerTask = new TimerTask(delayMs, new TimeOutCheckMession(this));
-//            Async.getTimer().addTask(timerTask);
-//        }
-        if (delayMs != null) {
-            WheelMain.addTask(new WrapperTimeOutTask(this, delayMs.intValue()));
+        //如果对任务有单独超时设置，则将其添加到时间轮
+        if (worker.timeout() > 0) {
+            WheelMain.addTask(new ITimeoutTask() {
+                @Override
+                public int delayMs() {
+                    return worker.timeout();
+                }
+
+                @Override
+                public void timeoutCallback() {
+                    //超时时间已到，查看是否为INIT或RUN,是的话自身快速失败
+                    if (getState() == INIT || getState() == WORKING) {
+                        fastFail(getState(), null);
+                    }
+                }
+            });
         }
 
         //阻塞取结果

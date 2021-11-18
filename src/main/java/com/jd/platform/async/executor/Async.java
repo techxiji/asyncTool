@@ -3,8 +3,7 @@ package com.jd.platform.async.executor;
 
 import com.jd.platform.async.callback.DefaultGroupCallback;
 import com.jd.platform.async.callback.IGroupCallback;
-import com.jd.platform.async.executor.timeout.WheelMain;
-import com.jd.platform.async.executor.wheel.Timer;
+import com.jd.platform.async.timewheel.WheelMain;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 
 import java.util.*;

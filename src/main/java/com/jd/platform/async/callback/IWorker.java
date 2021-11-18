@@ -1,8 +1,8 @@
 package com.jd.platform.async.callback;
 
-import java.util.Map;
-
 import com.jd.platform.async.wrapper.WorkerWrapper;
+
+import java.util.Map;
 
 /**
  * 每个最小执行单元需要实现该接口
@@ -26,5 +26,14 @@ public interface IWorker<T, V> {
      */
     default V defaultValue() {
         return null;
+    }
+
+    /**
+     * 超时时间设置（ms）
+     * @return
+     * 多少毫秒超时
+     */
+    default int timeout() {
+        return -1;
     }
 }
