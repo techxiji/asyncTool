@@ -23,6 +23,10 @@ public class DeWorker implements IWorker<String, User>, ICallback<String, User> 
         return new User("user0");
     }
 
+    @Override
+    public int timeout() {
+        return 75;
+    }
 
     @Override
     public User defaultValue() {

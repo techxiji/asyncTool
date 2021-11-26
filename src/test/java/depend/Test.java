@@ -46,7 +46,6 @@ public class Test {
                     .callback(w)
                     .build();
 
-            workerWrapper.setDelayMs(73L);
 
             //虽然尚未执行，但是也可以先取得结果的引用，作为下一个任务的入参。V1.2前写法，需要手工给
             //V1.3后，不用给wrapper setParam了，直接在worker的action里自行根据id获取即可.参考dependnew包下代码

@@ -74,10 +74,6 @@ public class WorkerWrapper<T, V> {
      * 注意，该属性仅在nextWrapper数量<=1时有效，>1时的情况是不存在的
      */
     private volatile boolean needCheckNextWrapperResult = true;
-    /**
-     * 超时时间
-     */
-    private Long delayMs;
 
     private static final int FINISH = 1;
     private static final int ERROR = 2;
@@ -628,13 +624,5 @@ public class WorkerWrapper<T, V> {
 
             return wrapper;
         }
-    }
-
-    public Long getDelayMs() {
-        return delayMs;
-    }
-
-    public void setDelayMs(Long delayMs) {
-        this.delayMs = delayMs;
     }
 }
