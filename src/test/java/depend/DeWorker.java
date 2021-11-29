@@ -16,7 +16,7 @@ public class DeWorker implements IWorker<String, User>, ICallback<String, User> 
     @Override
     public User action(String object, Map<String, WorkerWrapper> allWrappers) {
         try {
-            Thread.sleep(70);
+            Thread.sleep(15);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -25,7 +25,7 @@ public class DeWorker implements IWorker<String, User>, ICallback<String, User> 
 
     @Override
     public int timeout() {
-        return 75;
+        return 19;
     }
 
     @Override

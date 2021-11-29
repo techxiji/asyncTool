@@ -20,7 +20,7 @@ public class Test {
 
 
 
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 100000; i++) {
             DeWorker w = new DeWorker();
             DeWorker1 w1 = new DeWorker1();
             DeWorker2 w2 = new DeWorker2();

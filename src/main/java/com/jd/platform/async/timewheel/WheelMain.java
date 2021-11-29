@@ -70,6 +70,7 @@ public class WheelMain {
 
             long currentTimeMillis = System.currentTimeMillis();
 
+//            System.out.println("当前时间 " + currentTimeMillis);
             //遍历槽内所有任务
             for (SingleTask singleTask : timerTaskList) {
                 //如果level = 0，代表时间到了，或者创建时间+超时时间>当前时间了，也是时间到了
@@ -99,8 +100,8 @@ public class WheelMain {
         if (delay <= 0) {
             return;
         }
-        //放到第几个槽，因为在add进来时，任务就已经开始执行了，要减去在添加这一霎那的那1毫秒的槽位
-        int putIndex = INDEX.get() + delay % MAX_SIZE - 1 + 20;
+        //放到第几个槽
+        int putIndex = INDEX.get() + delay % MAX_SIZE;
         CopyOnWriteArrayList<SingleTask> list = allTaskList.get(putIndex % MAX_SIZE);
         //添加到该槽位的队列中
         list.add(singleTask);

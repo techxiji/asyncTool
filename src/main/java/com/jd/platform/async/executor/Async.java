@@ -24,12 +24,8 @@ public class Async {
      * 注意，这里是个static，也就是只能有一个线程池。用户自定义线程池时，也只能定义一个
      */
     private static ExecutorService executorService;
-    /**
-     * 超时管理时间轮
-     */
-//    private static Timer timer = new Timer();
 
-    /**
+    /*
      * 初始化时间轮
      */
     static {
