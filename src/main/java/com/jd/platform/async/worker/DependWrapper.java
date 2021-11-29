@@ -3,6 +3,8 @@ package com.jd.platform.async.worker;
 
 import com.jd.platform.async.wrapper.WorkerWrapper;
 
+import java.util.Objects;
+
 /**
  * 对依赖的wrapper的封装
  * @author wuweifeng wrote on 2019-12-20
@@ -47,6 +49,24 @@ public class DependWrapper {
 
     public void setMust(boolean must) {
         this.must = must;
+    }
+
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof DependWrapper)) {
+            return false;
+        }
+        DependWrapper that = (DependWrapper) o;
+        return must == that.must && dependWrapper.equals(that.dependWrapper);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(dependWrapper, must);
     }
 
     @Override
