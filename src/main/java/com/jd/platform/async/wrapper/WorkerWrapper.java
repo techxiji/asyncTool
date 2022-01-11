@@ -432,6 +432,9 @@ public class WorkerWrapper<T, V> {
         return workResult;
     }
 
+    public List<DependWrapper> getDependWrappers() {
+        return dependWrappers;
+    }
 
     private int getState() {
         return state.get();
