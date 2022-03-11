@@ -1,4 +1,4 @@
-package parallel;
+package beforev14.parallel;
 
 
 import com.jd.platform.async.callback.ICallback;
@@ -13,13 +13,15 @@ import java.util.Map;
  * @author wuweifeng wrote on 2019-11-20.
  */
 public class ParWorker6 implements IWorker<String, String>, ICallback<String, String> {
+
     private long sleepTime = 1000;
 
     public void setSleepTime(long sleepTime) {
         this.sleepTime = sleepTime;
     }
+
     @Override
-    public String action(String object, Map<String, WorkerWrapper> allWrappers) {
+    public String action(String object, Map<String, WorkerWrapper<?, ?>> allWrappers) {
         try {
             Thread.sleep(sleepTime);
         } catch (InterruptedException e) {
@@ -43,10 +45,10 @@ public class ParWorker6 implements IWorker<String, String>, ICallback<String, St
     public void result(boolean success, String param, WorkResult<String> workResult) {
         if (success) {
             System.out.println("callback worker3 success--" + SystemClock.now() + "----" + workResult.getResult()
-                    + "-threadName:" +Thread.currentThread().getName());
+                    + "-threadName:" + Thread.currentThread().getName());
         } else {
-            System.err.println("callback worker3 failure--" + SystemClock.now() + "----"  + workResult.getResult()
-                    + "-threadName:" +Thread.currentThread().getName());
+            System.err.println("callback worker3 failure--" + SystemClock.now() + "----" + workResult.getResult()
+                    + "-threadName:" + Thread.currentThread().getName());
         }
     }
 

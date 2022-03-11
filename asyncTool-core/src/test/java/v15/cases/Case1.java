@@ -4,21 +4,22 @@ import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
 
-import java.util.concurrent.ExecutionException;
-
 /**
  * 示例：简单示例--复杂点的
  *
  * @author create by TcSnZh on 2021/5/8-下午10:29
  */
 class Case1 {
+
     private static WorkerWrapperBuilder<?, ?> builder(String id) {
         return WorkerWrapper.<String, String>builder()
                 .id(id)
                 .worker((param, allWrappers) -> {
                     System.out.println("wrapper(id=" + id + ") is working");
                     try {
-                        Thread.sleep(50);
+                        if (!"F".equals(id)) {
+                            Thread.sleep(50);
+                        }
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
@@ -58,5 +59,6 @@ class Case1 {
         wrapper(id=H) is working
         */
     }
+
 }
 
