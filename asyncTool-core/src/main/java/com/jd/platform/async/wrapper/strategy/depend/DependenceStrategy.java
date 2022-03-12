@@ -80,6 +80,14 @@ public interface DependenceStrategy {
      * 被依赖的所有Wrapper都必须成功才能开始工作。
      * 如果其中任一Wrapper还没有执行且不存在失败，则休息。
      * 如果其中任一Wrapper失败则立即失败。
+     *
+     * FIXME
+     * 这里有个问题，
+     * 假设任务A依赖B、C
+     *
+     * B执行时间比较长，A-B的线程和A-C的线程都检测到B的res==null（DEFAULT），
+     * 那么线程A就真的去休眠（TAKE_REST）而没有发起，
+     * 导致整个任务长时间无法结束
      */
     DependenceStrategy ALL_DEPENDENCIES_ALL_SUCCESS = new DependenceStrategy() {
         @Override
@@ -103,6 +111,7 @@ public interface DependenceStrategy {
                 }
             }
             if (hasWaiting) {
+                System.out.println(Thread.currentThread().getName()+"\thasWaiting\t"+thisWrapper.getId()+"\t"+fromWrapper.getId());
                 return DependenceAction.TAKE_REST.emptyProperty();
             }
             return DependenceAction.START_WORK.emptyProperty();

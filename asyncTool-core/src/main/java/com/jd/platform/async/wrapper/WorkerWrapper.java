@@ -362,6 +362,7 @@ public abstract class WorkerWrapper<T, V> {
                     wrapperStrategy.judgeAction(getDependWrappers(), this, fromWrapper);
             switch (judge.getDependenceAction()) {
                 case TAKE_REST:
+                    System.out.println("TAKE_REST\t"+id+"\t"+fromWrapper.id);
                     return;
                 case FAST_FAIL:
                     if (setState(state, STARTED, ERROR)) {

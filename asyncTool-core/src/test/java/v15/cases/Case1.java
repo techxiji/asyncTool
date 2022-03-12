@@ -17,13 +17,13 @@ class Case1 {
                 .worker((param, allWrappers) -> {
                     System.out.println("wrapper(id=" + id + ") is working");
                     try {
-                        if (!"F".equals(id)) {
+                        if ("F".equals(id)) {
                             Thread.sleep(50);
                         }
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
-                    return null;
+                    return id;
                 });
     }
 
@@ -44,7 +44,7 @@ class Case1 {
                 )
                 .build();
         try {
-            Async.work(1000, a, d).awaitFinish();
+            Async.work(10000, a, d).awaitFinish();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
