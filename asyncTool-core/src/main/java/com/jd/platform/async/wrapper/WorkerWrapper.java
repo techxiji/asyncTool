@@ -362,7 +362,9 @@ public abstract class WorkerWrapper<T, V> {
                     wrapperStrategy.judgeAction(getDependWrappers(), this, fromWrapper);
             switch (judge.getDependenceAction()) {
                 case TAKE_REST:
-                    System.out.println("TAKE_REST\t"+id+"\t"+fromWrapper.id);
+                    //FIXME 等待200毫秒重新投入线程池，主要为了调起最后一个任务
+                    Thread.sleep(200L);
+                    executorService.submit(() -> this.work(executorService, fromWrapper, remainTime, group));
                     return;
                 case FAST_FAIL:
                     if (setState(state, STARTED, ERROR)) {

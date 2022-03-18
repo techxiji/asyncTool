@@ -1,6 +1,5 @@
 package com.jd.platform.async.wrapper.strategy.depend;
 
-import com.jd.platform.async.exception.SkippedException;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
@@ -111,7 +110,6 @@ public interface DependenceStrategy {
                 }
             }
             if (hasWaiting) {
-                System.out.println(Thread.currentThread().getName()+"\thasWaiting\t"+thisWrapper.getId()+"\t"+fromWrapper.getId());
                 return DependenceAction.TAKE_REST.emptyProperty();
             }
             return DependenceAction.START_WORK.emptyProperty();
