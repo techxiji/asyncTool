@@ -1,10 +1,9 @@
 package v15.cases;
 
 import com.jd.platform.async.executor.Async;
+import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
-
-import java.util.concurrent.ExecutionException;
 
 /**
  * 示例：简单示例--复杂点的
@@ -12,21 +11,27 @@ import java.util.concurrent.ExecutionException;
  * @author create by TcSnZh on 2021/5/8-下午10:29
  */
 class Case1 {
+
     private static WorkerWrapperBuilder<?, ?> builder(String id) {
         return WorkerWrapper.<String, String>builder()
                 .id(id)
                 .worker((param, allWrappers) -> {
-                    System.out.println("wrapper(id=" + id + ") is working");
                     try {
-                        Thread.sleep(50);
+                        if ("F".equals(id)) {
+                            System.out.println("wrapper(id=" + id + ") is working");
+                            Thread.sleep(12000);
+                        } else {
+                            System.out.println("wrapper(id=" + id + ") is worki444ng");
+                        }
                     } catch (InterruptedException e) {
                         e.printStackTrace();
                     }
-                    return null;
+                    return id;
                 });
     }
 
     public static void main(String[] args) {
+        long now = SystemClock.now();
         WorkerWrapper<?, ?> a = builder("A").build();
         WorkerWrapper<?, ?> d;
         builder("H")
@@ -43,10 +48,11 @@ class Case1 {
                 )
                 .build();
         try {
-            Async.work(1000, a, d).awaitFinish();
+            Async.work(10000, a, d).awaitFinish();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+        System.out.println("now:" + (SystemClock.now() - now));
         /* 输出:
         wrapper(id=D) is working
         wrapper(id=A) is working
@@ -58,5 +64,6 @@ class Case1 {
         wrapper(id=H) is working
         */
     }
+
 }
 
