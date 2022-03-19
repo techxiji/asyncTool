@@ -19,12 +19,11 @@ class Case1 {
                         if ("F".equals(id)) {
                             System.out.println("wrapper(id=" + id + ") is working");
                             Thread.sleep(5000);
+                        }else {
+                            System.out.println("wrapper(id=" + id + ") is worki444ng");
                         }
                     } catch (InterruptedException e) {
                         e.printStackTrace();
-                    }
-                    if ("F".equals(id)) {
-                        System.out.println("wrapper(id=" + id + ") is worki444ng");
                     }
                     return id;
                 });
