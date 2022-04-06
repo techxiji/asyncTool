@@ -9,7 +9,7 @@
 
 有对高并发场景下，被热key打爆存储层，秒杀等场景中热数据本地缓存、热数据（刷子用户）限流等需要热key探测的，可关注京东热key探测缓存框架https://gitee.com/jd-platform-opensource/hotkey 。热key框架正在京东内部多个部门线上使用，各项指标优异，单机可为1000台业务服务器提供热key计算服务，毫秒级探测及热key推送。
 
-有需要存储海量日志的场景，秒级GB级或数十GB级，可关注我的另一个开源项目[JLog](http://https://gitee.com/jd-platform-opensource/jlog)，较ELK系列套件在处理日志方面提升10倍性能，且存储降低70%以上。
+有需要存储海量日志的场景，秒级GB级或数十GB级，可关注我的另一个开源项目[JLog](https://gitee.com/jd-platform-opensource/jlog)，较ELK系列套件在处理日志方面提升10倍性能，且存储降低70%以上。
 
 ## 并行常见的场景
 1 客户端请求服务端接口，该接口需要调用其他N个微服务的接口
