@@ -268,6 +268,17 @@ public abstract class WorkerWrapper<T, V> {
         final Consumer<Boolean> __function__callbackResult =
                 success -> {
                     WorkResult<V> _workResult = getWorkResult();
+                    /*
+                    如果不循环拿，则很容易拿到空值（用户有可能拿到值，也有可能拿到null），
+                    但如果一定要空值的话，那么尝试25次之后就允许，
+                    这是个魔法值，如果有更合适的设计请修改这里。
+                    比如将getWorkResult()方法的调用交给用户，
+                    但用户必须明确知道会有这种情况发生
+                     */
+                    int count = 25;
+                    while (_workResult.getResultState() == ResultState.DEFAULT && count-- > 0) {
+                        _workResult = getWorkResult();
+                    }
                     try {
                         callback.result(success, param, _workResult);
                     } catch (Exception e) {
