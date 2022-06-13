@@ -218,7 +218,7 @@ public class WorkerWrapper<T, V> {
     private synchronized void doDependsJobs(ExecutorService executorService, List<DependWrapper> dependWrappers, WorkerWrapper fromWrapper, long now, long remainTime) {
         //如果当前任务已经完成了，依赖的其他任务拿到锁再进来时，不需要执行下面的逻辑了。
         if (getState() != INIT) {
-            return ;
+            return;
         }
         boolean nowDependIsMust = false;
         //创建必须完成的上游wrapper集合
