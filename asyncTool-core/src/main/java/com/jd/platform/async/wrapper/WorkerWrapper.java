@@ -264,16 +264,16 @@ public abstract class WorkerWrapper<T, V> {
                         }
                     }
                 };
-        final Runnable __function__callbackResultOfFalse_beginNext =
-                () -> {
-                    __function__callbackResult.accept(false);
+        final Consumer<Boolean> __function__callbackResultOfFalse_beginNext =
+                (success) -> {
+                    __function__callbackResult.accept(success);
                     beginNext(executorService, now, remainTime, group);
                 };
         final BiConsumer<Boolean, Exception> __function__fastFail_callbackResult$false_beginNext =
                 (fastFail_isTimeout, fastFail_exception) -> {
                     boolean isEndsNormally = fastFail_exception instanceof EndsNormallyException;
                     fastFail(fastFail_isTimeout && !isEndsNormally, fastFail_exception, isEndsNormally);
-                    __function__callbackResultOfFalse_beginNext.run();
+                    __function__callbackResultOfFalse_beginNext.accept(false);
                 };
         final Runnable __function__doWork =
                 () -> {
@@ -281,8 +281,7 @@ public abstract class WorkerWrapper<T, V> {
                         try {
                             if (fire(group)) {
                                 if (setState(state, WORKING, AFTER_WORK)) {
-                                    __function__callbackResult.accept(true);
-                                    beginNext(executorService, now, remainTime, group);
+                                    __function__callbackResultOfFalse_beginNext.accept(true);
                                 }
                             }
                         } catch (Exception e) {
@@ -306,6 +305,7 @@ public abstract class WorkerWrapper<T, V> {
             // 总的已经超时了，就快速失败，进行下一个
             if (remainTime <= 0) {
                 if (setState(state, states_of_beforeWorkingEnd, ERROR, null)) {
+                    System.out.println("快速失败");
                     __function__fastFail_callbackResult$false_beginNext.accept(true, null);
                 }
                 return;
