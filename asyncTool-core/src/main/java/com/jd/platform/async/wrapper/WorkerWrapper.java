@@ -20,6 +20,7 @@ import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -264,16 +265,16 @@ public abstract class WorkerWrapper<T, V> {
                         }
                     }
                 };
-        final Runnable __function__callbackResultOfFalse_beginNext =
-                () -> {
-                    __function__callbackResult.accept(false);
+        final Consumer<Boolean> __function__callbackResultOfFalse_beginNext =
+                (success) -> {
+                    __function__callbackResult.accept(success);
                     beginNext(executorService, now, remainTime, group);
                 };
         final BiConsumer<Boolean, Exception> __function__fastFail_callbackResult$false_beginNext =
                 (fastFail_isTimeout, fastFail_exception) -> {
                     boolean isEndsNormally = fastFail_exception instanceof EndsNormallyException;
                     fastFail(fastFail_isTimeout && !isEndsNormally, fastFail_exception, isEndsNormally);
-                    __function__callbackResultOfFalse_beginNext.run();
+                    __function__callbackResultOfFalse_beginNext.accept(false);
                 };
         final Runnable __function__doWork =
                 () -> {
@@ -281,8 +282,12 @@ public abstract class WorkerWrapper<T, V> {
                         try {
                             if (fire(group)) {
                                 if (setState(state, WORKING, AFTER_WORK)) {
-                                    __function__callbackResult.accept(true);
-                                    beginNext(executorService, now, remainTime, group);
+                                    __function__callbackResultOfFalse_beginNext.accept(true);
+                                }
+                            }else {
+                                //如果任务超时，需要将最后那个超时任务设置为超时异常结束的
+                                if (setState(state, WORKING, ERROR)) {
+                                    __function__fastFail_callbackResult$false_beginNext.accept(true, new TimeoutException());
                                 }
                             }
                         } catch (Exception e) {
@@ -352,7 +357,6 @@ public abstract class WorkerWrapper<T, V> {
                 case TAKE_REST:
                     //FIXME 等待200毫秒重新投入线程池，主要为了调起最后一个任务
                     Thread.sleep(200L);
-                    System.out.println(id+"进入休息");
                     executorService.submit(() -> this.work(executorService, fromWrapper,
                             remainTime - (SystemClock.now() - now), group));
                     return;

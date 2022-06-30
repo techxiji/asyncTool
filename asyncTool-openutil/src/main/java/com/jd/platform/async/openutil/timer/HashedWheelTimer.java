@@ -315,7 +315,7 @@ public class HashedWheelTimer extends AbstractWheelTimer {
             startTimeInitialized.countDown();
 
             do {
-                //TODO 时间轮这里结束不了任务
+                //TODO 时间轮这里一直执行，结束不了任务
                 final long deadline = waitForNextTick();
                 if (deadline > 0) {
                     int idx = (int) (tick & mask);
