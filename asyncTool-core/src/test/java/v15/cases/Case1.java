@@ -1,7 +1,9 @@
 package v15.cases;
 
+import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.executor.Async;
 import com.jd.platform.async.executor.timer.SystemClock;
+import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
 
@@ -19,7 +21,7 @@ class Case1 {
                     try {
                         if ("F".equals(id)) {
                             System.out.println("wrapper(id=" + id + ") is working");
-                            Thread.sleep(12000);
+                            Thread.sleep(100);
                         } else {
                             System.out.println("wrapper(id=" + id + ") is worki444ng");
                         }
@@ -27,13 +29,26 @@ class Case1 {
                         e.printStackTrace();
                     }
                     return id;
-                });
+                }).callback((new ICallback<String, String>() {
+                    @Override
+                    public void begin() {
+                        System.out.println("wrapper(id=" + id + ") has begin . ");
+                    }
+
+                    @Override
+                    public void result(boolean success, String param, WorkResult<String> workResult) {
+                        System.out.println("\t\twrapper(id=" + id + ") callback "
+                                + (success ? "success " : "fail ")
+                                + ", workResult is " + workResult);
+                    }
+                }))
+                .allowInterrupt(true);
     }
 
     public static void main(String[] args) {
         long now = SystemClock.now();
         WorkerWrapper<?, ?> a = builder("A").build();
-        WorkerWrapper<?, ?> d;
+        WorkerWrapper<?, ?> d = builder("D").build();
         builder("H")
                 .depends(
                         builder("F")
@@ -42,13 +57,13 @@ class Case1 {
                                 .build(),
                         builder("G")
                                 .depends(builder("E")
-                                        .depends(d = builder("D").build())
+                                        .depends(d)
                                         .build())
                                 .build()
                 )
                 .build();
         try {
-            Async.work(10000, a, d).awaitFinish();
+            Async.work(5000, a, d).awaitFinish();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
