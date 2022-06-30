@@ -21,7 +21,7 @@ class Case1 {
                     try {
                         if ("F".equals(id)) {
                             System.out.println("wrapper(id=" + id + ") is working");
-                            Thread.sleep(100);
+                            Thread.sleep(2000);
                         } else {
                             System.out.println("wrapper(id=" + id + ") is worki444ng");
                         }
@@ -63,7 +63,7 @@ class Case1 {
                 )
                 .build();
         try {
-            Async.work(5000, a, d).awaitFinish();
+            Async.work(1000, a, d).awaitFinish();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
