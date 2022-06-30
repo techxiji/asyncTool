@@ -352,7 +352,6 @@ public abstract class WorkerWrapper<T, V> {
                 case TAKE_REST:
                     //FIXME 等待200毫秒重新投入线程池，主要为了调起最后一个任务
                     Thread.sleep(200L);
-                    System.out.println(id+"进入休息");
                     executorService.submit(() -> this.work(executorService, fromWrapper,
                             remainTime - (SystemClock.now() - now), group));
                     return;
