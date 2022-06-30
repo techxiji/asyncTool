@@ -1,15 +1,15 @@
 package com.jd.platform.async.wrapper;
 
-import com.jd.platform.async.exception.CancelException;
-import com.jd.platform.async.exception.EndsNormallyException;
-import com.jd.platform.async.worker.ResultState;
-import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.callback.DefaultCallback;
 import com.jd.platform.async.callback.ICallback;
 import com.jd.platform.async.callback.IWorker;
+import com.jd.platform.async.exception.CancelException;
+import com.jd.platform.async.exception.EndsNormallyException;
 import com.jd.platform.async.exception.SkippedException;
 import com.jd.platform.async.executor.PollingCenter;
 import com.jd.platform.async.executor.timer.SystemClock;
+import com.jd.platform.async.worker.ResultState;
+import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.strategy.WrapperStrategy;
 import com.jd.platform.async.wrapper.strategy.depend.DependMustStrategyMapper;
 import com.jd.platform.async.wrapper.strategy.depend.DependOnUpWrapperStrategyMapper;
@@ -25,18 +25,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.AFTER_WORK;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.BUILDING;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.ERROR;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.INIT;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.SKIP;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.STARTED;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.SUCCESS;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.WORKING;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_all;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_of_beforeWorkingEnd;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_of_notWorked;
-import static com.jd.platform.async.wrapper.WorkerWrapper.State.states_of_skipOrAfterWork;
 import static com.jd.platform.async.wrapper.WorkerWrapper.State.*;
 
 /**
@@ -268,17 +256,6 @@ public abstract class WorkerWrapper<T, V> {
         final Consumer<Boolean> __function__callbackResult =
                 success -> {
                     WorkResult<V> _workResult = getWorkResult();
-                    /*
-                    如果不循环拿，则很容易拿到空值（用户有可能拿到值，也有可能拿到null），
-                    但如果一定要空值的话，那么尝试25次之后就允许，
-                    这是个魔法值，如果有更合适的设计请修改这里。
-                    比如将getWorkResult()方法的调用交给用户，
-                    但用户必须明确知道会有这种情况发生
-                     */
-                    int count = 25;
-                    while (_workResult.getResultState() == ResultState.DEFAULT && count-- > 0) {
-                        _workResult = getWorkResult();
-                    }
                     try {
                         callback.result(success, param, _workResult);
                     } catch (Exception e) {
@@ -302,17 +279,17 @@ public abstract class WorkerWrapper<T, V> {
                 () -> {
                     if (setState(state, STARTED, WORKING)) {
                         try {
-                            fire(group);
+                            if (fire(group)) {
+                                if (setState(state, WORKING, AFTER_WORK)) {
+                                    __function__callbackResult.accept(true);
+                                    beginNext(executorService, now, remainTime, group);
+                                }
+                            }
                         } catch (Exception e) {
                             if (setState(state, WORKING, ERROR)) {
                                 __function__fastFail_callbackResult$false_beginNext.accept(false, e);
                             }
-                            return;
                         }
-                    }
-                    if (setState(state, WORKING, AFTER_WORK)) {
-                        __function__callbackResult.accept(true);
-                        beginNext(executorService, now, remainTime, group);
                     }
                 };
         // ================================================
@@ -375,7 +352,9 @@ public abstract class WorkerWrapper<T, V> {
                 case TAKE_REST:
                     //FIXME 等待200毫秒重新投入线程池，主要为了调起最后一个任务
                     Thread.sleep(200L);
-                    executorService.submit(() -> this.work(executorService, fromWrapper, remainTime-(SystemClock.now()-now), group));
+                    System.out.println(id+"进入休息");
+                    executorService.submit(() -> this.work(executorService, fromWrapper,
+                            remainTime - (SystemClock.now() - now), group));
                     return;
                 case FAST_FAIL:
                     if (setState(state, STARTED, ERROR)) {
@@ -410,13 +389,14 @@ public abstract class WorkerWrapper<T, V> {
      * 本工作线程执行自己的job.
      * <p/>
      * 本方法不负责校验状态。请在调用前自行检验
+     * @return
      */
-    protected void fire(WorkerWrapperGroup group) {
+    protected boolean fire(WorkerWrapperGroup group) {
         try {
             doWorkingThread.set(Thread.currentThread());
             //执行耗时操作
             V result = worker.action(param, group.getForParamUseWrappers());
-            workResult.compareAndSet(
+            return workResult.compareAndSet(
                     null,
                     new WorkResult<>(result, ResultState.SUCCESS)
             );
