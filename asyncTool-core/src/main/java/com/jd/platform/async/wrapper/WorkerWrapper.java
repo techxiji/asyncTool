@@ -20,6 +20,7 @@ import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -283,6 +284,11 @@ public abstract class WorkerWrapper<T, V> {
                                 if (setState(state, WORKING, AFTER_WORK)) {
                                     __function__callbackResultOfFalse_beginNext.accept(true);
                                 }
+                            }else {
+                                //如果任务超时，需要将最后那个超时任务设置为超时异常结束的
+                                if (setState(state, WORKING, ERROR)) {
+                                    __function__fastFail_callbackResult$false_beginNext.accept(false, new TimeoutException());
+                                }
                             }
                         } catch (Exception e) {
                             if (setState(state, WORKING, ERROR)) {
@@ -305,7 +311,6 @@ public abstract class WorkerWrapper<T, V> {
             // 总的已经超时了，就快速失败，进行下一个
             if (remainTime <= 0) {
                 if (setState(state, states_of_beforeWorkingEnd, ERROR, null)) {
-                    System.out.println("快速失败");
                     __function__fastFail_callbackResult$false_beginNext.accept(true, null);
                 }
                 return;
