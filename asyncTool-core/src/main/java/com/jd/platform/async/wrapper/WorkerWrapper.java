@@ -287,7 +287,7 @@ public abstract class WorkerWrapper<T, V> {
                             }else {
                                 //如果任务超时，需要将最后那个超时任务设置为超时异常结束的
                                 if (setState(state, WORKING, ERROR)) {
-                                    __function__fastFail_callbackResult$false_beginNext.accept(false, new TimeoutException());
+                                    __function__fastFail_callbackResult$false_beginNext.accept(true, new TimeoutException());
                                 }
                             }
                         } catch (Exception e) {
