@@ -2,7 +2,6 @@ package com.jd.platform.async.openutil.timer;
 
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -22,8 +21,6 @@ public class HashedWheelTimer extends AbstractWheelTimer {
 
     private final Worker worker = new Worker();
     private final Thread workerThread;
-    @SuppressWarnings({"unused", "FieldMayBeFinal"})
-    private final AtomicInteger workerState = new AtomicInteger(WORKER_STATE_INIT); // 0 - init, 1 - started, 2 - shut down
 
     private final long tickDuration;
     private final HashedWheelBucket[] wheel;
@@ -207,7 +204,7 @@ public class HashedWheelTimer extends AbstractWheelTimer {
     public void start() {
         switch (workerState.get()) {
             case WORKER_STATE_INIT:
-                if (workerState.compareAndSet(WORKER_STATE_INIT, WORKER_STATE_STARTED)) {
+                if (changeState(WORKER_STATE_INIT, WORKER_STATE_STARTED)) {
                     workerThread.start();
                 }
                 break;
@@ -238,7 +235,7 @@ public class HashedWheelTimer extends AbstractWheelTimer {
                             TimerTask.class.getSimpleName());
         }
 
-        if (!workerState.compareAndSet(WORKER_STATE_STARTED, WORKER_STATE_SHUTDOWN)) {
+        if (!changeState(WORKER_STATE_STARTED, WORKER_STATE_SHUTDOWN)) {
             // state is init or shutdown .
             return Collections.emptySet();
         }
@@ -315,7 +312,6 @@ public class HashedWheelTimer extends AbstractWheelTimer {
             startTimeInitialized.countDown();
 
             do {
-                //TODO 时间轮这里一直执行，结束不了任务
                 final long deadline = waitForNextTick();
                 if (deadline > 0) {
                     int idx = (int) (tick & mask);
