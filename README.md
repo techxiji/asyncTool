@@ -65,11 +65,11 @@
 我的框架提供了这样的回调功能。并且，如果执行异常、超时，可以在定义这个执行单元时就设定默认值。
 
 ## 并行场景可能存在的需求之——执行顺序的强依赖和弱依赖
-如上图的3，A和B并发执行，最后是C。
+如上图的4，B和C并发执行，最后是A。
 
-有些场景下，我们希望A和B都执行完毕后，才能执行C，CompletableFuture里有个allOf(futures...).then()方法可以做到。
+有些场景下，我们希望B和C都执行完毕后，才能执行A，CompletableFuture里有个allOf(futures...).then()方法可以做到。
 
-有些场景下，我们希望A或者B任何一个执行完毕，就执行C，CompletableFuture里有个anyOf(futures...).then()方法可以做到。
+有些场景下，我们希望B或者C任何一个执行完毕，就执行A，CompletableFuture里有个anyOf(futures...).then()方法可以做到。
 
 我的框架同样提供了类似的功能，通过设定wrapper里的addDepend依赖时，可以指定依赖的任务是否must执行完毕。如果依赖的是must要执行的，那么就一定会等待所有的must依赖项全执行完毕，才执行自己。
 
