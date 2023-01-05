@@ -16,6 +16,7 @@ public class DeWorker implements IWorker<String, User>, ICallback<String, User> 
     @Override
     public User action(String object, Map<String, WorkerWrapper> allWrappers) {
         try {
+            System.out.println("deWorker0 action");
             Thread.sleep(1000);
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -31,7 +32,7 @@ public class DeWorker implements IWorker<String, User>, ICallback<String, User> 
 
     @Override
     public void begin() {
-        //System.out.println(Thread.currentThread().getName() + "- start --" + System.currentTimeMillis());
+        System.out.println("DeWorker0 begin " + Thread.currentThread().getName() + "- start --" + System.currentTimeMillis());
     }
 
     @Override

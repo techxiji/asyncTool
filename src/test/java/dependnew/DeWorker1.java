@@ -15,9 +15,7 @@ public class DeWorker1 implements IWorker<String, User>, ICallback<String, User>
 
     @Override
     public User action(String object, Map<String, WorkerWrapper> allWrappers) {
-        System.out.println("-----------------");
-        System.out.println("获取par0的执行结果： " + allWrappers.get("first").getWorkResult());
-        System.out.println("取par0的结果作为自己的入参，并将par0的结果加上一些东西");
+        System.out.println("deWorker1 action");
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
@@ -34,7 +32,7 @@ public class DeWorker1 implements IWorker<String, User>, ICallback<String, User>
 
     @Override
     public void begin() {
-        //System.out.println(Thread.currentThread().getName() + "- start --" + System.currentTimeMillis());
+        System.out.println("DeWorker1 begin " + Thread.currentThread().getName() + "- start --" + System.currentTimeMillis());
     }
 
     @Override
