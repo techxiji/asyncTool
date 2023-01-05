@@ -11,8 +11,8 @@ import com.jd.platform.async.worker.WorkResult;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -196,8 +196,8 @@ public class WorkerWrapper<T, V> {
                     .work(executorService, WorkerWrapper.this, remainTime - costTime, forParamUseWrappers), executorService);
         }
         try {
-            CompletableFuture.allOf(futures).get();
-        } catch (InterruptedException | ExecutionException e) {
+            CompletableFuture.allOf(futures).get(remainTime - costTime, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
