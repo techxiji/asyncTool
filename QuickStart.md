@@ -6,7 +6,7 @@
             <dependency>
                 <groupId>com.jd.platform</groupId>
                 <artifactId>asyncTool</artifactId>
-                <version>1.4.1-SNAPSHOT</version>
+                <version>1.4.2-SNAPSHOT</version>
             </dependency>
 ```
 外网请使用jitpack.io上打的包
