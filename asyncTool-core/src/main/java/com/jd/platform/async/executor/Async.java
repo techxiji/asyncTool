@@ -14,6 +14,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -102,7 +103,8 @@ public class Async {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                if (onceWork.getAllThreadSubmit().stream().allMatch(Future::isDone)) {
+                //完成或者取消就及时取消任务
+                if (onceWork.getAllThreadSubmit().stream().allMatch(future -> future.isDone()|| future.isCancelled())) {
                     if (!onceWork.isCancelled() && !onceWork.isWaitingCancel()) {
                         onceWork.pleaseCancel();
                     }
