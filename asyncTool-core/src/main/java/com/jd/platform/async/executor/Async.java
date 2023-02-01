@@ -85,13 +85,30 @@ public class Async {
         //保存上次执行的线程池变量（为了兼容以前的旧功能）
         Async.lastExecutorService.set(Objects.requireNonNull(executorService, "ExecutorService is null ! "));
         final WorkerWrapperGroup group = new WorkerWrapperGroup(SystemClock.now(), timeout);
-        final OnceWork.Impl onceWork = new OnceWork.Impl(group, workId);
         group.addWrapper(workerWrappers);
+        final OnceWork.Impl onceWork = new OnceWork.Impl(group, workId);
+        //有多少个开始节点就有多少个线程，依赖任务靠被依赖任务的线程完成工作
         workerWrappers.forEach(wrapper -> {
             if (wrapper == null) {
                 return;
             }
-            executorService.submit(() -> wrapper.work(executorService, timeout, group));
+            Future<?> future = executorService.submit(() -> wrapper.work(executorService, timeout, group));
+            onceWork.getAllThreadSubmit().add(future);
+        });
+        executorService.execute(() -> {
+            while (true) {
+                try {
+                    TimeUnit.MILLISECONDS.sleep(500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                if (onceWork.getAllThreadSubmit().stream().allMatch(Future::isDone)) {
+                    if (!onceWork.isCancelled() && !onceWork.isWaitingCancel()) {
+                        onceWork.pleaseCancel();
+                    }
+                    break;
+                }
+            }
         });
         return onceWork;
     }
