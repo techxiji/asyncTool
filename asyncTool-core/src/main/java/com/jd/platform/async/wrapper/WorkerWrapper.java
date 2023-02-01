@@ -229,6 +229,19 @@ public abstract class WorkerWrapper<T, V> {
     public void cancel() {
         if (State.setState(state, states_of_beforeWorkingEnd, SKIP, null)) {
             fastFail(false, new CancelException(), true);
+            //此处调用结果处理器让用户决定取消逻辑
+            final Consumer<Boolean> __function__callbackResult =
+                    success -> {
+                        WorkResult<V> _workResult = getWorkResult();
+                        try {
+                            callback.result(success, param, _workResult);
+                        } catch (Exception e) {
+                            if (setState(state, states_of_skipOrAfterWork, ERROR, null)) {
+                                fastFail(false, e, _workResult.getEx() instanceof EndsNormallyException);
+                            }
+                        }
+                    };
+            __function__callbackResult.accept(false);
         }
     }
 

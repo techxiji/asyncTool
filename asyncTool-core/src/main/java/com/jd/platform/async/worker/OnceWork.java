@@ -1,5 +1,6 @@
 package com.jd.platform.async.worker;
 
+import com.jd.platform.async.executor.PollingCenter;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperGroup;
@@ -270,9 +271,19 @@ public interface OnceWork {
     class Impl extends AbstractOnceWork {
         protected final WorkerWrapperGroup group;
 
+        /**
+         * 本次任务中所有线程提交
+         */
+        protected List<Future<?>> allThreadSubmit;
+
+        public List<Future<?>> getAllThreadSubmit() {
+            return allThreadSubmit;
+        }
+
         public Impl(WorkerWrapperGroup group, String workId) {
             super(workId);
             this.group = group;
+            allThreadSubmit = new ArrayList<>(group.getForParamUseWrappers().size());
         }
 
         @Override
@@ -321,6 +332,8 @@ public interface OnceWork {
         @Override
         public void pleaseCancel() {
             group.pleaseCancel();
+            //发起检查，看看所有是否取消完毕
+            PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
         }
     }
 
