@@ -7,6 +7,9 @@ import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * 示例：简单示例--复杂点的
  *
@@ -27,6 +30,7 @@ class Case1 {
                         }
                     } catch (InterruptedException e) {
                         e.printStackTrace();
+                        throw new RuntimeException("被中断了");
                     }
                     return id;
                 }).callback((new ICallback<String, String>() {
@@ -37,6 +41,9 @@ class Case1 {
 
                     @Override
                     public void result(boolean success, String param, WorkResult<String> workResult) {
+                        // if ("H".equals(id)) {
+                        //     int a=1/0;
+                        // }
                         System.out.println("\t\twrapper(id=" + id + ") callback "
                                 + (success ? "success " : "fail ")
                                 + ", workResult is " + workResult);
@@ -45,7 +52,8 @@ class Case1 {
                 .allowInterrupt(true);
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
+        final ExecutorService executorService = Executors.newSingleThreadExecutor();
         long now = SystemClock.now();
         WorkerWrapper<?, ?> a = builder("A").build();
         WorkerWrapper<?, ?> d = builder("D").build();
@@ -63,10 +71,11 @@ class Case1 {
                 )
                 .build();
         try {
-            Async.work(1000, a, d).awaitFinish();
+            Async.work(1000, executorService, a, d).awaitFinish();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+        executorService.shutdown();
         System.out.println("now:" + (SystemClock.now() - now));
         /* 输出:
         wrapper(id=D) is working
