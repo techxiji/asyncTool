@@ -136,10 +136,8 @@ public class Async {
                 //任务结束就退出检查
                 if (onceWork.isFinish()) {
                     break;
-                }
-                //完成或者取消就及时取消任务
-                if (!onceWork.isFinish()
-                        && onceWork.getAllThreadSubmit().stream().allMatch(future -> future.isDone() || future.isCancelled())) {
+                } else if (onceWork.getAllThreadSubmit().stream().allMatch(future -> future.isDone() || future.isCancelled())) {
+                    //完成或者取消就及时取消任务
                     if (!onceWork.isCancelled() && !onceWork.isWaitingCancel()) {
                         onceWork.pleaseCancel();
                     }
