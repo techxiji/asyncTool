@@ -235,6 +235,9 @@ public interface WorkerWrapperBuilder<T, V> {
         return setNext().wrapper(wrappers).end();
     }
 
+    default WorkerWrapperBuilder<T, V> nextOf2(Collection<WorkerWrapper<?,?>> wrappers) {
+        return setNext().wrapper(wrappers).end();
+    }
     /**
      * 设置超时时间的具体属性
      */
