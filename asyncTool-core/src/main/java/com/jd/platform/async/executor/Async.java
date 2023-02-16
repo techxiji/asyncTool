@@ -136,9 +136,18 @@ public class Async {
                 //任务结束就退出检查
                 if (onceWork.isFinish()) {
                     break;
-                } else if (onceWork.getAllThreadSubmit().stream().allMatch(future -> future.isDone() || future.isCancelled())) {
-                    //完成或者取消就及时取消任务
-                    if (!onceWork.isCancelled() && !onceWork.isWaitingCancel()) {
+                } else if (onceWork.getAllThreadSubmit().stream().allMatch(future -> future.isCancelled() || future.isDone())) {
+                    //等5秒再去操作
+                    long startTime = SystemClock.now();
+                    long now = SystemClock.now();
+                    while (TimeUnit.SECONDS.toMillis(5) > now - startTime) {
+                        now = SystemClock.now();
+                    }
+                    //未超时、未完成或者未取消就取消任务
+                    if (!(onceWork.hasTimeout()
+                            && onceWork.isFinish()
+                            && onceWork.isCancelled()
+                            && onceWork.isWaitingCancel())) {
                         onceWork.pleaseCancel();
                     }
                     break;
