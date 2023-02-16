@@ -145,9 +145,9 @@ public class Async {
                     }
                     //未超时、未完成或者未取消就取消任务
                     if (!(onceWork.hasTimeout()
-                            && onceWork.isFinish()
-                            && onceWork.isCancelled()
-                            && onceWork.isWaitingCancel())) {
+                            || onceWork.isFinish()
+                            || onceWork.isCancelled()
+                            || onceWork.isWaitingCancel())) {
                         onceWork.pleaseCancel();
                     }
                     break;
