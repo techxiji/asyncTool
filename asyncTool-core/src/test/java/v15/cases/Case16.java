@@ -9,25 +9,18 @@ import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
 
-import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 示例：模拟内存溢出
- * <p>
- * 运行之前请设置
- * -Xmx20m -Xms20m
- *
- * 当内存溢出时，其中一个线程会OOM，runable不会继续调度，
- * 我通过添加一个线程主动cancel来达到提前结束任务而不是等超时
+ * 示例：模拟线程池资源不够用的情况
  *
  * @author create by kyle
  */
-class Case15 {
+class Case16 {
 
     private static WorkerWrapperBuilder<?, ?> builder(String id) {
 
@@ -55,6 +48,11 @@ class Case15 {
         long now = SystemClock.now();
         WorkerWrapper<?, ?> a = builder("A").build();
         WorkerWrapper<?, ?> d;
+        WorkerWrapper<?, ?> k;
+        WorkerWrapper<?, ?> n;
+        WorkerWrapper<?, ?> q;
+        WorkerWrapper<?, ?> t;
+        WorkerWrapper<?, ?> w;
         WorkerWrapper<?, ?> build = builder("H")
                 .depends(
                         builder("F")
@@ -65,12 +63,37 @@ class Case15 {
                                 .depends(builder("E")
                                         .depends(d = builder("D").build())
                                         .build())
+                                .build(),
+                        builder("I")
+                                .depends(builder("J")
+                                        .depends(k = builder("K").build())
+                                        .build())
+                                .build(),
+                        builder("L")
+                                .depends(builder("M")
+                                        .depends(n = builder("N").build())
+                                        .build())
+                                .build(),
+                        builder("O")
+                                .depends(builder("P")
+                                        .depends(q = builder("Q").build())
+                                        .build())
+                                .build(),
+                        builder("R")
+                                .depends(builder("S")
+                                        .depends(t = builder("T").build())
+                                        .build())
+                                .build(),
+                        builder("U")
+                                .depends(builder("V")
+                                        .depends(w = builder("W").build())
+                                        .build())
                                 .build()
                 )
                 .build();
         try {
-            OnceWork work = Async.work(10000, a, d);
-            ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1));
+            OnceWork work = Async.work(1000000, a, d, k, n, q, t, w);
+            ThreadPoolExecutor pool = new ThreadPoolExecutor(2, 2, 10, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1));
 
             pool.execute(() -> {
                 while (true) {
@@ -95,10 +118,10 @@ class Case15 {
         }
 
         System.out.println("cost:" + (SystemClock.now() - now));
-        int count=1;
+        int count = 1;
         while (build.getWorkResult().getEx() == null) {
             //同步等待result数据写入
-            if(count++>800){
+            if (count++ > 800) {
                 break;
             }
         }
@@ -117,9 +140,6 @@ class Case15 {
 
     private static class MyWorker implements IWorker<String, String> {
 
-        //用于存放模拟的对象，防止GC回收，用List做对象引用
-        private final List<byte[]> list = new LinkedList<>();
-
         private String id;
 
         private int i = 0;
@@ -130,13 +150,10 @@ class Case15 {
 
         @Override
         public String action(String param, Map<String, WorkerWrapper<?, ?>> allWrappers) {
-            if ("F".equals(id)) {
-                System.out.println("wrapper(id=" + id + ") is working");
-                while (true) {
-                    System.out.println("I am alive：" + i++);
-                    byte[] buf = new byte[1024 * 1024];
-                    list.add(buf);
-                }
+            try {
+                TimeUnit.SECONDS.sleep(ThreadLocalRandom.current().nextInt(20));
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
             return id;
         }
