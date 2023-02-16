@@ -69,7 +69,7 @@ class Case15 {
                 )
                 .build();
         try {
-            OnceWork work = Async.work(5000, a, d);
+            OnceWork work = Async.work(10000, a, d);
             ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1));
 
             pool.execute(() -> {
@@ -95,8 +95,12 @@ class Case15 {
         }
 
         System.out.println("cost:" + (SystemClock.now() - now));
+        int count=1;
         while (build.getWorkResult().getEx() == null) {
             //同步等待result数据写入
+            if(count++>800){
+                break;
+            }
         }
         System.out.println("输出H节点的结果----" + build.getWorkResult());
         /* 输出:
