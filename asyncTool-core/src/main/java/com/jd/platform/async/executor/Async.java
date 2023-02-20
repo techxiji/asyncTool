@@ -10,6 +10,7 @@ import com.jd.platform.async.wrapper.WorkerWrapperGroup;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -103,7 +104,6 @@ public class Async {
      * @param executorService 执行线程池
      * @param workerWrappers  任务容器集合
      * @param workId          本次工作id
-     *
      * @return 返回 {@link OnceWork}任务句柄对象。
      */
     public static OnceWork work(long timeout,
@@ -118,33 +118,16 @@ public class Async {
         final WorkerWrapperGroup group = new WorkerWrapperGroup(SystemClock.now(), timeout);
         group.addWrapper(workerWrappers);
         final OnceWork.Impl onceWork = new OnceWork.Impl(group, workId);
+        ExecutorServiceWrapper executorServiceWrapper = new ExecutorServiceWrapper(executorService);
+
         //有多少个开始节点就有多少个线程，依赖任务靠被依赖任务的线程完成工作
         workerWrappers.forEach(wrapper -> {
             if (wrapper == null) {
                 return;
             }
-            Future<?> future = executorService.submit(() -> wrapper.work(executorService, timeout, group));
-            onceWork.getAllThreadSubmit().add(future);
+            executorServiceWrapper.addThreadSubmit(new TaskCallable(wrapper, timeout, group, executorServiceWrapper));
         });
-        executorService.execute(() -> {
-            while (true) {
-                try {
-                    TimeUnit.MILLISECONDS.sleep(500);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                //任务结束就退出检查
-                if (onceWork.isFinish()) {
-                    break;
-                } else if (onceWork.getAllThreadSubmit().stream().allMatch(future -> future.isDone() || future.isCancelled())) {
-                    //完成或者取消就及时取消任务
-                    if (!onceWork.isCancelled() && !onceWork.isWaitingCancel()) {
-                        onceWork.pleaseCancel();
-                    }
-                    break;
-                }
-            }
-        });
+        executorServiceWrapper.startCheck(onceWork);
         return onceWork;
     }
 
@@ -202,7 +185,6 @@ public class Async {
 
     /**
      * @param now 是否立即关闭
-     *
      * @return 如果尚未调用过{@link #getCommonPool()}，即没有初始化默认线程池，返回false。否则返回true。
      */
     @SuppressWarnings("unused")
@@ -220,13 +202,10 @@ public class Async {
         return true;
     }
 
-    // ========================= deprecated =========================
-
     /**
      * 同步执行一次任务。
      *
      * @return 只要执行未超时，就返回true。
-     *
      * @deprecated 已经被 {@link #work(long, ExecutorService, Collection, String)}方法取代。
      */
     @Deprecated
@@ -255,6 +234,8 @@ public class Async {
         //noinspection unchecked
         return beginWork(timeout, executorService, workerWrappers);
     }
+
+    // ========================= deprecated =========================
 
     /**
      * 同步阻塞,直到所有都完成,或失败
@@ -335,7 +316,6 @@ public class Async {
      * 关闭指定的线程池
      *
      * @param executorService 指定的线程池。传入null则会关闭默认线程池。
-     *
      * @deprecated 没啥用的方法，要关闭线程池还不如直接调用线程池的关闭方法，避免歧义。
      */
     @Deprecated
@@ -345,4 +325,39 @@ public class Async {
         }
     }
 
+    public static class TaskCallable implements Callable<BigDecimal> {
+
+        private final WorkerWrapperGroup group;
+
+        private final long timeout;
+
+        private final WorkerWrapper<?, ?> wrapper;
+
+        private final ExecutorServiceWrapper executorServiceWrapper;
+
+        private final WorkerWrapper workerWrapper;
+
+        public TaskCallable(WorkerWrapper<?, ?> wrapper, long timeout, WorkerWrapperGroup group, ExecutorServiceWrapper executorServiceWrapper) {
+            this.wrapper = wrapper;
+            this.group = group;
+            this.timeout = timeout;
+            this.executorServiceWrapper = executorServiceWrapper;
+            this.workerWrapper = null;
+        }
+
+        public <V, T> TaskCallable(WorkerWrapper<?, ?> wrapper, long timeout, WorkerWrapperGroup group, ExecutorServiceWrapper executorService, WorkerWrapper<?, ?> workerWrapper) {
+            this.wrapper = wrapper;
+            this.group = group;
+            this.timeout = timeout;
+            this.executorServiceWrapper = executorService;
+            this.workerWrapper = workerWrapper;
+        }
+
+        @Override
+        public BigDecimal call() throws Exception {
+            wrapper.work(executorServiceWrapper, this.workerWrapper, timeout, group);
+            return BigDecimal.ZERO;
+        }
+
+    }
 }
