@@ -6,6 +6,8 @@ import com.jd.platform.async.callback.IWorker;
 import com.jd.platform.async.exception.CancelException;
 import com.jd.platform.async.exception.EndsNormallyException;
 import com.jd.platform.async.exception.SkippedException;
+import com.jd.platform.async.executor.Async;
+import com.jd.platform.async.executor.ExecutorServiceWrapper;
 import com.jd.platform.async.executor.PollingCenter;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.worker.ResultState;
@@ -18,7 +20,6 @@ import com.jd.platform.async.wrapper.strategy.depend.DependenceStrategy;
 import com.jd.platform.async.wrapper.strategy.skip.SkipStrategy;
 
 import java.util.*;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,49 +44,59 @@ public abstract class WorkerWrapper<T, V> {
      * 该wrapper的唯一标识
      */
     protected final String id;
+
     protected final IWorker<T, V> worker;
+
     protected final ICallback<T, V> callback;
-    /**
-     * 各种策略的封装类。
-     */
-    private final WrapperStrategy wrapperStrategy;
+
     /**
      * 是否允许被打断
      */
     protected final boolean allowInterrupt;
-    /**
-     * 是否启动超时检查
-     */
-    final boolean enableTimeout;
-    /**
-     * 超时时间长度
-     */
-    final long timeoutLength;
-    /**
-     * 超时时间单位
-     */
-    final TimeUnit timeoutUnit;
 
-    // ========== 临时属性 ==========
-
-    /**
-     * worker将来要处理的param
-     */
-    protected volatile T param;
     /**
      * 原子设置wrapper的状态
      * <p>
      * {@link State}此枚举类枚举了state值所代表的状态枚举。
      */
     protected final AtomicInteger state = new AtomicInteger(BUILDING.id);
+
     /**
      * 该值将在{@link IWorker#action(Object, Map)}进行时设为当前线程，在任务开始前或结束后都为null。
      */
     protected final AtomicReference<Thread> doWorkingThread = new AtomicReference<>();
+
     /**
      * 也是个钩子变量，用来存临时的结果
      */
     protected final AtomicReference<WorkResult<V>> workResult = new AtomicReference<>(null);
+
+    /**
+     * 是否启动超时检查
+     */
+    final boolean enableTimeout;
+
+    // ========== 临时属性 ==========
+
+    /**
+     * 超时时间长度
+     */
+    final long timeoutLength;
+
+    /**
+     * 超时时间单位
+     */
+    final TimeUnit timeoutUnit;
+
+    /**
+     * 各种策略的封装类。
+     */
+    private final WrapperStrategy wrapperStrategy;
+
+    /**
+     * worker将来要处理的param
+     */
+    protected volatile T param;
 
     WorkerWrapper(String id,
                   IWorker<T, V> worker,
@@ -126,6 +137,10 @@ public abstract class WorkerWrapper<T, V> {
 
     // ========== public ==========
 
+    public static <T, V> WorkerWrapperBuilder<T, V> builder() {
+        return new Builder<>();
+    }
+
     /**
      * 外部调用本线程运行此wrapper的入口方法。
      * 该方法将会确定这组wrapper所属的group。
@@ -135,7 +150,7 @@ public abstract class WorkerWrapper<T, V> {
      * @param group           wrapper组
      * @throws IllegalStateException 当wrapper正在building状态时被启动，则会抛出该异常。
      */
-    public void work(ExecutorService executorService,
+    public void work(ExecutorServiceWrapper executorService,
                      long remainTime,
                      WorkerWrapperGroup group) {
         work(executorService, null, remainTime, group);
@@ -167,10 +182,16 @@ public abstract class WorkerWrapper<T, V> {
      */
     public abstract Set<WorkerWrapper<?, ?>> getNextWrappers();
 
+    abstract void setNextWrappers(Set<WorkerWrapper<?, ?>> nextWrappers);
+
     /**
      * 获取上游wrapper
      */
     public abstract Set<WorkerWrapper<?, ?>> getDependWrappers();
+
+    abstract void setDependWrappers(Set<WorkerWrapper<?, ?>> dependWrappers);
+
+    // ========== protected ==========
 
     /**
      * 获取本wrapper的超时情况。如有必要还会修改wrapper状态。
@@ -249,8 +270,6 @@ public abstract class WorkerWrapper<T, V> {
         return wrapperStrategy;
     }
 
-    // ========== protected ==========
-
     /**
      * 工作的核心方法。
      *
@@ -258,10 +277,10 @@ public abstract class WorkerWrapper<T, V> {
      * @param remainTime  剩余时间。
      * @throws IllegalStateException 当wrapper正在building状态时被启动，则会抛出该异常。
      */
-    protected void work(ExecutorService executorService,
-                        WorkerWrapper<?, ?> fromWrapper,
-                        long remainTime,
-                        WorkerWrapperGroup group
+    public void work(ExecutorServiceWrapper executorService,
+                     WorkerWrapper<?, ?> fromWrapper,
+                     long remainTime,
+                     WorkerWrapperGroup group
     ) {
         long now = SystemClock.now();
         // ================================================
@@ -297,7 +316,7 @@ public abstract class WorkerWrapper<T, V> {
                                 if (setState(state, WORKING, AFTER_WORK)) {
                                     __function__callbackResultOfFalse_beginNext.accept(true);
                                 }
-                            }else {
+                            } else {
                                 //如果任务超时，需要将最后那个超时任务设置为超时异常结束的
                                 if (setState(state, WORKING, ERROR)) {
                                     __function__fastFail_callbackResult$false_beginNext.accept(true, new TimeoutException());
@@ -368,10 +387,7 @@ public abstract class WorkerWrapper<T, V> {
                     wrapperStrategy.judgeAction(getDependWrappers(), this, fromWrapper);
             switch (judge.getDependenceAction()) {
                 case TAKE_REST:
-                    //FIXME 等待200毫秒重新投入线程池，主要为了调起最后一个任务
-                    Thread.sleep(200L);
-                    executorService.submit(() -> this.work(executorService, fromWrapper,
-                            remainTime - (SystemClock.now() - now), group));
+                    PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
                     return;
                 case FAST_FAIL:
                     if (setState(state, STARTED, ERROR)) {
@@ -401,11 +417,13 @@ public abstract class WorkerWrapper<T, V> {
         }
     }
 
+    // ========== hashcode and equals ==========
 
     /**
      * 本工作线程执行自己的job.
      * <p/>
      * 本方法不负责校验状态。请在调用前自行检验
+     *
      * @return
      */
     protected boolean fire(WorkerWrapperGroup group) {
@@ -446,12 +464,14 @@ public abstract class WorkerWrapper<T, V> {
         ));
     }
 
+    // ========== builder ==========
+
     /**
      * 进行下一个任务
      * <p/>
      * 本方法不负责校验状态。请在调用前自行检验
      */
-    protected void beginNext(ExecutorService executorService, long now, long remainTime, WorkerWrapperGroup group) {
+    protected void beginNext(ExecutorServiceWrapper executorService, long now, long remainTime, WorkerWrapperGroup group) {
         //花费的时间
         final long costTime = SystemClock.now() - now;
         final long nextRemainTIme = remainTime - costTime;
@@ -478,9 +498,9 @@ public abstract class WorkerWrapper<T, V> {
         else {
             try {
                 group.addWrapper(nextWrappers);
-                nextWrappers.forEach(next -> executorService.submit(() ->
-                        next.work(executorService, this, nextRemainTIme, group))
-                );
+                nextWrappers.forEach(next -> executorService.addThreadSubmit(
+                        new Async.TaskCallable(next, nextRemainTIme, group, executorService, this)
+                ));
                 setState(state, AFTER_WORK, SUCCESS);
             } finally {
                 PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
@@ -489,12 +509,12 @@ public abstract class WorkerWrapper<T, V> {
 
     }
 
-    // ========== hashcode and equals ==========
-
     @Override
     public boolean equals(Object o) {
         return super.equals(o);
     }
+
+    // ========== package access methods ==========
 
     /**
      * {@code return id.hashCode();}返回id值的hashcode
@@ -504,33 +524,6 @@ public abstract class WorkerWrapper<T, V> {
         // final String id can use to .hashcode() .
         return id.hashCode();
     }
-
-    // ========== builder ==========
-
-    public static <T, V> WorkerWrapperBuilder<T, V> builder() {
-        return new Builder<>();
-    }
-
-    /**
-     * 自v1.5，该类被抽取到{@link StableWorkerWrapperBuilder}抽象类，兼容之前的版本。
-     */
-    public static class Builder<W, C> extends StableWorkerWrapperBuilder<W, C, Builder<W, C>> {
-        /**
-         * @deprecated 建议使用 {@link #builder()}返回{@link WorkerWrapperBuilder}接口，以调用v1.5之后的规范api
-         */
-        @SuppressWarnings("DeprecatedIsStillUsed")
-        @Deprecated
-        public Builder() {
-        }
-    }
-
-    // ========== package access methods ==========
-
-    abstract void setNextWrappers(Set<WorkerWrapper<?, ?>> nextWrappers);
-
-    abstract void setDependWrappers(Set<WorkerWrapper<?, ?>> dependWrappers);
-
-    // ========== toString ==========
 
     @Override
     public String toString() {
@@ -567,56 +560,7 @@ public abstract class WorkerWrapper<T, V> {
         return sb.toString();
     }
 
-    /**
-     * 一个通用的策略器实现类，提供了修改的功能。并兼容之前的代码。
-     */
-    public static class StableWrapperStrategy extends WrapperStrategy.AbstractWrapperStrategy {
-        private DependOnUpWrapperStrategyMapper dependOnUpWrapperStrategyMapper;
-        private DependMustStrategyMapper dependMustStrategyMapper;
-        private DependenceStrategy dependenceStrategy;
-        private SkipStrategy skipStrategy;
-
-        @Override
-        public DependOnUpWrapperStrategyMapper getDependWrapperStrategyMapper() {
-            return dependOnUpWrapperStrategyMapper;
-        }
-
-        @Override
-        public void setDependWrapperStrategyMapper(DependOnUpWrapperStrategyMapper dependOnUpWrapperStrategyMapper) {
-            this.dependOnUpWrapperStrategyMapper = dependOnUpWrapperStrategyMapper;
-        }
-
-        @SuppressWarnings("deprecation")
-        @Override
-        public DependMustStrategyMapper getDependMustStrategyMapper() {
-            return dependMustStrategyMapper;
-        }
-
-        @Override
-        public void setDependMustStrategyMapper(DependMustStrategyMapper dependMustStrategyMapper) {
-            this.dependMustStrategyMapper = dependMustStrategyMapper;
-        }
-
-        @Override
-        public DependenceStrategy getDependenceStrategy() {
-            return dependenceStrategy;
-        }
-
-        @Override
-        public void setDependenceStrategy(DependenceStrategy dependenceStrategy) {
-            this.dependenceStrategy = dependenceStrategy;
-        }
-
-        @Override
-        public SkipStrategy getSkipStrategy() {
-            return skipStrategy;
-        }
-
-        @Override
-        public void setSkipStrategy(SkipStrategy skipStrategy) {
-            this.skipStrategy = skipStrategy;
-        }
-    }
+    // ========== toString ==========
 
     /**
      * state状态枚举工具类
@@ -658,27 +602,33 @@ public abstract class WorkerWrapper<T, V> {
 
         // public
 
-        public boolean finished() {
-            return this == SUCCESS || this == ERROR || this == SKIP;
-        }
+        static final State[] states_of_notWorked = new State[]{INIT, STARTED};
 
         // package
-
-        State(int id) {
-            this.id = id;
-        }
-
-        final int id;
-
-        // package-static
-
-        static final State[] states_of_notWorked = new State[]{INIT, STARTED};
 
         static final State[] states_of_skipOrAfterWork = new State[]{SKIP, AFTER_WORK};
 
         static final State[] states_of_beforeWorkingEnd = new State[]{INIT, STARTED, WORKING};
 
+        // package-static
+
         static final State[] states_all = new State[]{BUILDING, INIT, STARTED, WORKING, AFTER_WORK, SUCCESS, ERROR, SKIP};
+
+        static final Map<Integer, State> id2state;
+
+        static {
+            HashMap<Integer, State> map = new HashMap<>();
+            for (State s : State.values()) {
+                map.put(s.id, s);
+            }
+            id2state = Collections.unmodifiableMap(map);
+        }
+
+        final int id;
+
+        State(int id) {
+            this.id = id;
+        }
 
         /**
          * 自旋+CAS的设置状态，如果状态不在exceptValues返回内 或 没有设置成功，则返回false。
@@ -778,16 +728,81 @@ public abstract class WorkerWrapper<T, V> {
             return id2state.get(id);
         }
 
-        static final Map<Integer, State> id2state;
-
-        static {
-            HashMap<Integer, State> map = new HashMap<>();
-            for (State s : State.values()) {
-                map.put(s.id, s);
-            }
-            id2state = Collections.unmodifiableMap(map);
+        public boolean finished() {
+            return this == SUCCESS || this == ERROR || this == SKIP;
         }
 
+
+    }
+
+    /**
+     * 自v1.5，该类被抽取到{@link StableWorkerWrapperBuilder}抽象类，兼容之前的版本。
+     */
+    public static class Builder<W, C> extends StableWorkerWrapperBuilder<W, C, Builder<W, C>> {
+
+        /**
+         * @deprecated 建议使用 {@link #builder()}返回{@link WorkerWrapperBuilder}接口，以调用v1.5之后的规范api
+         */
+        @SuppressWarnings("DeprecatedIsStillUsed")
+        @Deprecated
+        public Builder() {
+        }
+
+    }
+
+    /**
+     * 一个通用的策略器实现类，提供了修改的功能。并兼容之前的代码。
+     */
+    public static class StableWrapperStrategy extends WrapperStrategy.AbstractWrapperStrategy {
+
+        private DependOnUpWrapperStrategyMapper dependOnUpWrapperStrategyMapper;
+
+        private DependMustStrategyMapper dependMustStrategyMapper;
+
+        private DependenceStrategy dependenceStrategy;
+
+        private SkipStrategy skipStrategy;
+
+        @Override
+        public DependOnUpWrapperStrategyMapper getDependWrapperStrategyMapper() {
+            return dependOnUpWrapperStrategyMapper;
+        }
+
+        @Override
+        public void setDependWrapperStrategyMapper(DependOnUpWrapperStrategyMapper dependOnUpWrapperStrategyMapper) {
+            this.dependOnUpWrapperStrategyMapper = dependOnUpWrapperStrategyMapper;
+        }
+
+        @SuppressWarnings("deprecation")
+        @Override
+        public DependMustStrategyMapper getDependMustStrategyMapper() {
+            return dependMustStrategyMapper;
+        }
+
+        @Override
+        public void setDependMustStrategyMapper(DependMustStrategyMapper dependMustStrategyMapper) {
+            this.dependMustStrategyMapper = dependMustStrategyMapper;
+        }
+
+        @Override
+        public DependenceStrategy getDependenceStrategy() {
+            return dependenceStrategy;
+        }
+
+        @Override
+        public void setDependenceStrategy(DependenceStrategy dependenceStrategy) {
+            this.dependenceStrategy = dependenceStrategy;
+        }
+
+        @Override
+        public SkipStrategy getSkipStrategy() {
+            return skipStrategy;
+        }
+
+        @Override
+        public void setSkipStrategy(SkipStrategy skipStrategy) {
+            this.skipStrategy = skipStrategy;
+        }
 
     }
 
@@ -795,8 +810,11 @@ public abstract class WorkerWrapper<T, V> {
      * 这是因未知错误而引发的异常
      */
     public static class NotExpectedException extends Exception {
+
         public NotExpectedException(Throwable cause, WorkerWrapper<?, ?> wrapper) {
             super("It's should not happened Exception . wrapper is " + wrapper, cause);
         }
+
     }
+
 }
