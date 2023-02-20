@@ -6,7 +6,10 @@ import com.jd.platform.async.wrapper.WorkerWrapper;
 import com.jd.platform.async.wrapper.WorkerWrapperGroup;
 
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -16,6 +19,14 @@ import java.util.stream.Collectors;
  * @author tcsnzh[zh.jobs@foxmail.com] create this in 2021/5/25-下午3:22
  */
 public interface OnceWork {
+
+    /**
+     * 空任务
+     */
+    static OnceWork emptyWork(String workId) {
+        return new EmptyWork(workId);
+    }
+
     /**
      * 返回唯一的workId
      */
@@ -126,6 +137,8 @@ public interface OnceWork {
         return new AsFuture(this, limitTime -> limitTime / 16);
     }
 
+    // static
+
     /**
      * 返回{@link Future}视图。
      *
@@ -137,19 +150,12 @@ public interface OnceWork {
         return new AsFuture(this, sleepCheckInterval);
     }
 
-    // static
-
-    /**
-     * 空任务
-     */
-    static OnceWork emptyWork(String workId) {
-        return new EmptyWork(workId);
-    }
-
     // class
 
     class AsFuture implements Future<Map<String, WorkerWrapper<?, ?>>> {
+
         private final OnceWork onceWork;
+
         private final Function<Long, Long> sleepCheckInterval;
 
         private AsFuture(OnceWork onceWork, Function<Long, Long> sleepCheckInterval) {
@@ -217,9 +223,11 @@ public interface OnceWork {
         public String toString() {
             return "(asFuture from " + onceWork + ")@" + Integer.toHexString(this.hashCode());
         }
+
     }
 
     abstract class AbstractOnceWork implements OnceWork {
+
         protected final String workId;
 
         public AbstractOnceWork(String workId) {
@@ -266,24 +274,16 @@ public interface OnceWork {
                     .append(", wrappers::getId=").append(getWrappers().keySet())
                     .append('}').toString();
         }
+
     }
 
     class Impl extends AbstractOnceWork {
+
         protected final WorkerWrapperGroup group;
-
-        /**
-         * 本次任务中所有线程提交
-         */
-        protected List<Future<?>> allThreadSubmit;
-
-        public List<Future<?>> getAllThreadSubmit() {
-            return allThreadSubmit;
-        }
 
         public Impl(WorkerWrapperGroup group, String workId) {
             super(workId);
             this.group = group;
-            allThreadSubmit = new ArrayList<>(group.getForParamUseWrappers().size());
         }
 
         @Override
@@ -331,13 +331,20 @@ public interface OnceWork {
 
         @Override
         public void pleaseCancel() {
-            group.pleaseCancel();
+            if (group.pleaseCancel()) {
+                check();
+            }
+        }
+
+        public void check() {
             //发起检查，看看所有是否取消完毕
             PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
         }
+
     }
 
     class EmptyWork extends AbstractOnceWork {
+
         private final long initTime = SystemClock.now();
 
         public EmptyWork(String workId) {
@@ -392,5 +399,7 @@ public interface OnceWork {
         public String toString() {
             return "(it's empty work)";
         }
+
     }
+
 }

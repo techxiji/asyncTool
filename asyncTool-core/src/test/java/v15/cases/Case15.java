@@ -12,16 +12,15 @@ import com.jd.platform.async.wrapper.WorkerWrapperBuilder;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.UUID;
+import java.util.concurrent.*;
 
 /**
  * 示例：模拟内存溢出
  * <p>
- * 运行之前请设置
+ * 运行内存溢出之前请设置
  * -Xmx20m -Xms20m
- *
+ * <p>
  * 当内存溢出时，其中一个线程会OOM，runable不会继续调度，
  * 我通过添加一个线程主动cancel来达到提前结束任务而不是等超时
  *
@@ -33,7 +32,7 @@ class Case15 {
 
         return WorkerWrapper.<String, String>builder()
                 .id(id)
-                .param(id + "X")
+                .param(UUID.randomUUID().toString())
                 .worker(new MyWorker(id))
                 .callback((new ICallback<String, String>() {
                     @Override
@@ -69,12 +68,24 @@ class Case15 {
                 )
                 .build();
         try {
-            OnceWork work = Async.work(5000, a, d);
+            ThreadPoolExecutor executor = new ThreadPoolExecutor(2, 2, 10, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100),
+                    new RejectedExecutionHandler() {
+                        @Override
+                        public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
+                            throw new RejectedExecutionException("Task " + r.toString() +
+                                    " rejectexxxxd from " +
+                                    e.toString());
+                        }
+                    });
+            OnceWork work = Async.work(10000, executor, a, d);
             ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1));
 
             pool.execute(() -> {
                 while (true) {
                     try {
+                        if (work.hasTimeout()) {
+                            System.out.println("超时");
+                        }
                         if (work.isCancelled()) {
                             System.out.println("取消成功");
                         }
@@ -95,8 +106,12 @@ class Case15 {
         }
 
         System.out.println("cost:" + (SystemClock.now() - now));
+        int count = 1;
         while (build.getWorkResult().getEx() == null) {
             //同步等待result数据写入
+            if (count++ > 800) {
+                break;
+            }
         }
         System.out.println("输出H节点的结果----" + build.getWorkResult());
         /* 输出:
@@ -116,7 +131,7 @@ class Case15 {
         //用于存放模拟的对象，防止GC回收，用List做对象引用
         private final List<byte[]> list = new LinkedList<>();
 
-        private String id;
+        private final String id;
 
         private int i = 0;
 
@@ -127,12 +142,50 @@ class Case15 {
         @Override
         public String action(String param, Map<String, WorkerWrapper<?, ?>> allWrappers) {
             if ("F".equals(id)) {
-                System.out.println("wrapper(id=" + id + ") is working");
                 while (true) {
+                    System.out.println("wrapper(id=" + id + ") is working");
                     System.out.println("I am alive：" + i++);
+                    /*
+                    第一种问题，内存溢出OOM，由系统取消任务执行，H的结果为{result=null, resultState=DEFAULT, ex=null}，因为没有跑到H，所以H的结果为null
+
+
+                    取消成功，结束成功
+                     */
                     byte[] buf = new byte[1024 * 1024];
                     list.add(buf);
+                    /*
+                    第二种问题，存在异常，H的结果为WorkResult{result=null, resultState=EXCEPTION, ex=java.lang.ArithmeticException: / by zero}
+
+
+                    结束成功
+                     */
+                    /*if(i==20000){
+                        int a=1/0;
+                    }*/
+                    /*
+                    第三种问题，啥也不做就是等待，结果执行超时，WorkResult{result=null, resultState=TIMEOUT, ex=null}，AsyncTool会在超时时发出中断指令，停止运行
+
+
+                    超时，结束成功
+                     */
+                    /*try {
+                        TimeUnit.SECONDS.sleep(3);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                        //如果将下面的语句注释，那么任务将永远不会结束
+                        throw new RuntimeException("被中断");
+                    }*/
                 }
+            }
+            if ("H".equals(id)) {
+                /**
+                 * 最后一个节点是否会被回调
+                 *
+                 * 第一种问题下不会回调
+                 * 第二种问题下不会回调
+                 * 第三种问题下不会回调
+                 */
+                System.out.println("H被回调");
             }
             return id;
         }
