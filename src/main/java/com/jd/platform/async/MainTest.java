@@ -10,6 +10,6 @@ import com.jd.platform.async.wrapper.WorkerWrapper;
 public class MainTest {
     public static void main(String[] args) {
         WorkerWrapper.Builder<String, String> wrapper = new WorkerWrapper.Builder<>();
-        System.out.println(wrapper);
+        System.out.println(wrapper+"");
     }
 }
