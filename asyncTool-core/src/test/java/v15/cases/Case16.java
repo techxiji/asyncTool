@@ -24,15 +24,12 @@ class Case16 {
 
     private static final ThreadPoolExecutor executor = new ThreadPoolExecutor(10, 20,
             30L, TimeUnit.MINUTES, new LinkedBlockingQueue<>(10),
-            new RejectedExecutionHandler() {
-                @Override
-                public void rejectedExecution(Runnable r, ThreadPoolExecutor e) {
-                    System.out.println("Task " + r.toString() +
-                            " rejected from " +
-                            e.toString());
-                    if (!e.isShutdown()) {
-                        r.run();
-                    }
+            (r, e) -> {
+                System.out.println("Task " + r.toString() +
+                        " rejected from " +
+                        e.toString());
+                if (!e.isShutdown()) {
+                    r.run();
                 }
             });
 

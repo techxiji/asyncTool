@@ -7,9 +7,9 @@ import com.jd.platform.async.exception.CancelException;
 import com.jd.platform.async.exception.EndsNormallyException;
 import com.jd.platform.async.exception.SkippedException;
 import com.jd.platform.async.executor.Async;
-import com.jd.platform.async.executor.ExecutorServiceWrapper;
 import com.jd.platform.async.executor.PollingCenter;
 import com.jd.platform.async.executor.timer.SystemClock;
+import com.jd.platform.async.worker.OnceWork;
 import com.jd.platform.async.worker.ResultState;
 import com.jd.platform.async.worker.WorkResult;
 import com.jd.platform.async.wrapper.strategy.WrapperStrategy;
@@ -150,7 +150,7 @@ public abstract class WorkerWrapper<T, V> {
      * @param group           wrapper组
      * @throws IllegalStateException 当wrapper正在building状态时被启动，则会抛出该异常。
      */
-    public void work(ExecutorServiceWrapper executorService,
+    public void work(OnceWork.Impl executorService,
                      long remainTime,
                      WorkerWrapperGroup group) {
         work(executorService, null, remainTime, group);
@@ -277,7 +277,7 @@ public abstract class WorkerWrapper<T, V> {
      * @param remainTime  剩余时间。
      * @throws IllegalStateException 当wrapper正在building状态时被启动，则会抛出该异常。
      */
-    public void work(ExecutorServiceWrapper executorService,
+    public void work(OnceWork work,
                      WorkerWrapper<?, ?> fromWrapper,
                      long remainTime,
                      WorkerWrapperGroup group
@@ -300,7 +300,7 @@ public abstract class WorkerWrapper<T, V> {
         final Consumer<Boolean> __function__callbackResultOfFalse_beginNext =
                 (success) -> {
                     __function__callbackResult.accept(success);
-                    beginNext(executorService, now, remainTime, group);
+                    beginNext(work, now, remainTime, group);
                 };
         final BiConsumer<Boolean, Exception> __function__fastFail_callbackResult$false_beginNext =
                 (fastFail_isTimeout, fastFail_exception) -> {
@@ -387,7 +387,7 @@ public abstract class WorkerWrapper<T, V> {
                     wrapperStrategy.judgeAction(getDependWrappers(), this, fromWrapper);
             switch (judge.getDependenceAction()) {
                 case TAKE_REST:
-                    PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
+                    work.check();
                     return;
                 case FAST_FAIL:
                     if (setState(state, STARTED, ERROR)) {
@@ -471,7 +471,7 @@ public abstract class WorkerWrapper<T, V> {
      * <p/>
      * 本方法不负责校验状态。请在调用前自行检验
      */
-    protected void beginNext(ExecutorServiceWrapper executorService, long now, long remainTime, WorkerWrapperGroup group) {
+    protected void beginNext(OnceWork onceWork, long now, long remainTime, WorkerWrapperGroup group) {
         //花费的时间
         final long costTime = SystemClock.now() - now;
         final long nextRemainTIme = remainTime - costTime;
@@ -490,7 +490,7 @@ public abstract class WorkerWrapper<T, V> {
             } finally {
                 PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
                 if (next != null) {
-                    next.work(executorService, this, nextRemainTIme, group);
+                    next.work(onceWork, this, nextRemainTIme, group);
                 }
             }
         }
@@ -498,8 +498,8 @@ public abstract class WorkerWrapper<T, V> {
         else {
             try {
                 group.addWrapper(nextWrappers);
-                nextWrappers.forEach(next -> executorService.addThreadSubmit(
-                        new Async.TaskCallable(next, nextRemainTIme, group, executorService, this)
+                nextWrappers.forEach(next -> onceWork.addThreadSubmit(
+                        new Async.TaskCallable(next, nextRemainTIme, group, onceWork, this)
                 ));
                 setState(state, AFTER_WORK, SUCCESS);
             } finally {

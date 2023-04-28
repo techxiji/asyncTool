@@ -143,8 +143,7 @@ class Case15 {
         public String action(String param, Map<String, WorkerWrapper<?, ?>> allWrappers) {
             if ("F".equals(id)) {
                 while (true) {
-                    System.out.println("wrapper(id=" + id + ") is working");
-                    System.out.println("I am alive：" + i++);
+                    System.out.print(id + " I am alive：" + i++ + ".");
                     /*
                     第一种问题，内存溢出OOM，由系统取消任务执行，H的结果为{result=null, resultState=DEFAULT, ex=null}，因为没有跑到H，所以H的结果为null
 

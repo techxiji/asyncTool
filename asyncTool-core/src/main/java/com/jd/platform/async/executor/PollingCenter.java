@@ -50,11 +50,11 @@ public class PollingCenter {
 
     // ========== fields and methods ==========
 
-    public void checkGroup(WorkerWrapperGroup.CheckFinishTask task) {
+    public void checkGroup(TimerTask task) {
         checkGroup(task, 0);
     }
 
-    public void checkGroup(WorkerWrapperGroup.CheckFinishTask task, long daley) {
+    public void checkGroup(TimerTask task, long daley) {
         timer.newTimeout(task, daley, TimeUnit.MILLISECONDS);
     }
 
