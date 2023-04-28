@@ -117,17 +117,16 @@ public class Async {
         Async.lastExecutorService.set(Objects.requireNonNull(executorService, "ExecutorService is null ! "));
         final WorkerWrapperGroup group = new WorkerWrapperGroup(SystemClock.now(), timeout);
         group.addWrapper(workerWrappers);
-        final OnceWork.Impl onceWork = new OnceWork.Impl(group, workId);
         ExecutorServiceWrapper executorServiceWrapper = new ExecutorServiceWrapper(executorService);
+        final OnceWork.Impl onceWork = new OnceWork.Impl(group, workId, executorServiceWrapper);
 
         //有多少个开始节点就有多少个线程，依赖任务靠被依赖任务的线程完成工作
         workerWrappers.forEach(wrapper -> {
             if (wrapper == null) {
                 return;
             }
-            executorServiceWrapper.addThreadSubmit(new TaskCallable(wrapper, timeout, group, executorServiceWrapper));
+            onceWork.addThreadSubmit(new TaskCallable(wrapper, timeout, group, onceWork));
         });
-        executorServiceWrapper.startCheck(onceWork);
         return onceWork;
     }
 
@@ -333,29 +332,29 @@ public class Async {
 
         private final WorkerWrapper<?, ?> wrapper;
 
-        private final ExecutorServiceWrapper executorServiceWrapper;
-
         private final WorkerWrapper workerWrapper;
 
-        public TaskCallable(WorkerWrapper<?, ?> wrapper, long timeout, WorkerWrapperGroup group, ExecutorServiceWrapper executorServiceWrapper) {
+        private final OnceWork onceWork;
+
+        public TaskCallable(WorkerWrapper<?, ?> wrapper, long timeout, WorkerWrapperGroup group, OnceWork onceWork) {
             this.wrapper = wrapper;
             this.group = group;
             this.timeout = timeout;
-            this.executorServiceWrapper = executorServiceWrapper;
+            this.onceWork = onceWork;
             this.workerWrapper = null;
         }
 
-        public <V, T> TaskCallable(WorkerWrapper<?, ?> wrapper, long timeout, WorkerWrapperGroup group, ExecutorServiceWrapper executorService, WorkerWrapper<?, ?> workerWrapper) {
+        public <V, T> TaskCallable(WorkerWrapper<?, ?> wrapper, long timeout, WorkerWrapperGroup group, OnceWork onceWork, WorkerWrapper<?, ?> workerWrapper) {
             this.wrapper = wrapper;
             this.group = group;
             this.timeout = timeout;
-            this.executorServiceWrapper = executorService;
+            this.onceWork = onceWork;
             this.workerWrapper = workerWrapper;
         }
 
         @Override
         public BigDecimal call() throws Exception {
-            wrapper.work(executorServiceWrapper, this.workerWrapper, timeout, group);
+            wrapper.work(onceWork, this.workerWrapper, timeout, group);
             return BigDecimal.ZERO;
         }
 
