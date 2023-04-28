@@ -1,5 +1,7 @@
 package com.jd.platform.async.worker;
 
+import com.jd.platform.async.executor.Async;
+import com.jd.platform.async.executor.ExecutorServiceWrapper;
 import com.jd.platform.async.executor.PollingCenter;
 import com.jd.platform.async.executor.timer.SystemClock;
 import com.jd.platform.async.wrapper.WorkerWrapper;
@@ -150,6 +152,10 @@ public interface OnceWork {
         return new AsFuture(this, sleepCheckInterval);
     }
 
+    void check();
+
+    void addThreadSubmit(Async.TaskCallable taskCallable);
+
     // class
 
     class AsFuture implements Future<Map<String, WorkerWrapper<?, ?>>> {
@@ -281,9 +287,12 @@ public interface OnceWork {
 
         protected final WorkerWrapperGroup group;
 
-        public Impl(WorkerWrapperGroup group, String workId) {
+        private final ExecutorServiceWrapper executorServiceWrapper;
+
+        public Impl(WorkerWrapperGroup group, String workId, ExecutorServiceWrapper executorServiceWrapper) {
             super(workId);
             this.group = group;
+            this.executorServiceWrapper = executorServiceWrapper;
         }
 
         @Override
@@ -336,9 +345,16 @@ public interface OnceWork {
             }
         }
 
+        @Override
         public void check() {
             //发起检查，看看所有是否取消完毕
             PollingCenter.getInstance().checkGroup(group.new CheckFinishTask());
+            executorServiceWrapper.startCheck(this);
+        }
+
+        @Override
+        public void addThreadSubmit(Async.TaskCallable taskCallable) {
+            executorServiceWrapper.addThreadSubmit(taskCallable);
         }
 
     }
@@ -393,6 +409,15 @@ public interface OnceWork {
 
         @Override
         public void pleaseCancel() {
+        }
+
+        @Override
+        public void check() {
+        }
+
+        @Override
+        public void addThreadSubmit(Async.TaskCallable taskCallable) {
+            // do nothing
         }
 
         @Override
