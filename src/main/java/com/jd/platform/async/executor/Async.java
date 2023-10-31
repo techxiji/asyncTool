@@ -83,36 +83,20 @@ public class Async {
             groupCallback = new DefaultGroupCallback();
         }
         IGroupCallback finalGroupCallback = groupCallback;
-        if (executorService != null) {
-            executorService.submit(() -> {
-                try {
-                    boolean success = beginWork(timeout, executorService, workerWrapper);
-                    if (success) {
-                        finalGroupCallback.success(Arrays.asList(workerWrapper));
-                    } else {
-                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
-                    }
-                } catch (ExecutionException | InterruptedException e) {
-                    e.printStackTrace();
-                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
+        ExecutorService finalExecutorService = executorService != null ? executorService : COMMON_POOL;
+        finalExecutorService.submit(() -> {
+            try {
+                boolean success = beginWork(timeout, finalExecutorService, workerWrapper);
+                if (success) {
+                    finalGroupCallback.success(Arrays.asList(workerWrapper));
+                } else {
+                    finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
                 }
-            });
-        } else {
-            COMMON_POOL.submit(() -> {
-                try {
-                    boolean success = beginWork(timeout, COMMON_POOL, workerWrapper);
-                    if (success) {
-                        finalGroupCallback.success(Arrays.asList(workerWrapper));
-                    } else {
-                        finalGroupCallback.failure(Arrays.asList(workerWrapper), new TimeoutException());
-                    }
-                } catch (ExecutionException | InterruptedException e) {
-                    e.printStackTrace();
-                    finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
-                }
-            });
-        }
-
+            } catch (ExecutionException | InterruptedException e) {
+                e.printStackTrace();
+                finalGroupCallback.failure(Arrays.asList(workerWrapper), e);
+            }
+        });
     }
 
     /**
