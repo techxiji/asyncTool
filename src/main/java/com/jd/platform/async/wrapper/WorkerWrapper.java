@@ -109,8 +109,7 @@ public class WorkerWrapper<T, V> {
         }
         //如果自己已经执行过了。
         //可能有多个依赖，其中的一个依赖已经执行完了，并且自己也已开始执行或执行完毕。当另一个依赖执行完毕，又进来该方法时，就不重复处理了
-        if (getState() == FINISH || getState() == ERROR) {
-            beginNext(executorService, now, remainTime);
+        if (getState() != INIT) {
             return;
         }
 
@@ -338,16 +337,15 @@ public class WorkerWrapper<T, V> {
             //执行耗时操作
             V resultValue = worker.action(param, forParamUseWrappers);
 
-            //如果状态不是在working,说明别的地方已经修改了
-            if (!compareAndSetState(WORKING, FINISH)) {
-                return workResult;
-            }
-
             workResult.setResultState(ResultState.SUCCESS);
             workResult.setResult(resultValue);
             //回调成功
             callback.result(true, param, workResult);
 
+            // 如果状态不是在working,说明别的地方已经修改了
+            if (!compareAndSetState(WORKING, FINISH)) {
+                return workResult;
+            }
             return workResult;
         } catch (Exception e) {
             //避免重复回调
