@@ -13,7 +13,7 @@ public class SystemClock {
 
     private final int period;
 
-    private final AtomicLong now;
+    private volatile long now;
 
     private static class InstanceHolder {
         private static final SystemClock INSTANCE = new SystemClock(1);
@@ -21,7 +21,7 @@ public class SystemClock {
 
     private SystemClock(int period) {
         this.period = period;
-        this.now = new AtomicLong(System.currentTimeMillis());
+        this.now = System.currentTimeMillis();
         scheduleClockUpdating();
     }
 
@@ -35,11 +35,11 @@ public class SystemClock {
             thread.setDaemon(true);
             return thread;
         });
-        scheduler.scheduleAtFixedRate(() -> now.set(System.currentTimeMillis()), period, period, TimeUnit.MILLISECONDS);
+        scheduler.scheduleAtFixedRate(() -> now = System.currentTimeMillis(), period, period, TimeUnit.MILLISECONDS);
     }
 
     private long currentTimeMillis() {
-        return now.get();
+        return now;
     }
 
     /**
